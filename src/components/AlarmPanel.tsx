@@ -108,7 +108,6 @@ const AlarmItem = ({ alarm, use24h, onToggle, onEdit }: AlarmItemProps) => {
                         {alarm.subtle_mode && <span style={{ color: cardFocused ? '#aaddaa' : '#88aa88' }}>📵</span>}
                         {alarm.auto_suspend && <span style={{ color: cardFocused ? '#ddaadd' : '#aa88aa' }}>💤</span>}
                         {alarm.prevent_sleep && <span style={{ color: cardFocused ? '#ffcc66' : '#e69900' }}>🛡️</span>}
-                        {alarm.screensaver_mode && alarm.screensaver_mode !== 'off' && <span style={{ color: cardFocused ? '#bbbbdd' : '#8888aa' }}>🌙</span>}
                         {isSnoozed && alarm.snoozed_until && (
                             <span style={{ color: cardFocused ? '#ffdd66' : '#ffaa00' }}>⏸️ {formatTime(new Date(alarm.snoozed_until * 1000).getHours(), new Date(alarm.snoozed_until * 1000).getMinutes(), use24h)}</span>
                         )}
@@ -132,8 +131,8 @@ export function AlarmPanel() {
 
     const handleCreateAlarm = useCallback(() => {
         showAlarmEditorModal({
-            onSave: async (hour, minute, label, recurring, sound, volume, subtleMode, autoSuspend, preventSleep, preventSleepWindow, screensaverMode) => {
-                await createAlarm(hour, minute, label, recurring, sound, volume, subtleMode, autoSuspend, preventSleep, preventSleepWindow, screensaverMode);
+            onSave: async (hour, minute, label, recurring, sound, volume, subtleMode, autoSuspend, preventSleep, preventSleepWindow) => {
+                await createAlarm(hour, minute, label, recurring, sound, volume, subtleMode, autoSuspend, preventSleep, preventSleepWindow);
             },
             getSounds,
             use24h,
@@ -144,8 +143,8 @@ export function AlarmPanel() {
     const handleEditAlarm = useCallback((alarm: Alarm) => {
         showAlarmEditorModal({
             alarm,
-            onSave: async (hour, minute, label, recurring, sound, volume, subtleMode, autoSuspend, preventSleep, preventSleepWindow, screensaverMode) => {
-                await updateAlarm(alarm.id, hour, minute, label, recurring, sound, volume, subtleMode, autoSuspend, preventSleep, preventSleepWindow, screensaverMode);
+            onSave: async (hour, minute, label, recurring, sound, volume, subtleMode, autoSuspend, preventSleep, preventSleepWindow) => {
+                await updateAlarm(alarm.id, hour, minute, label, recurring, sound, volume, subtleMode, autoSuspend, preventSleep, preventSleepWindow);
             },
             onDelete: async () => {
                 await deleteAlarm(alarm.id);

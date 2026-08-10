@@ -8,8 +8,6 @@ const getSleepInhibitorStatus = callable<[], SleepInhibitorStatus>('get_sleep_in
 const DEFAULT_STATUS: SleepInhibitorStatus = {
     active: false,
     items: [],
-    screensaver_mode: 'off',
-    screensaver_dim_opacity: 0.92
 };
 
 export function useSleepInhibitor() {
@@ -42,8 +40,6 @@ export function useSleepInhibitor() {
         isActive: status.active,
         reason: status.reason,
         items: status.items || [],
-        screensaverMode: status.screensaver_mode || 'off',
-        screensaverDimOpacity: status.screensaver_dim_opacity ?? 0.92,
         refresh: loadStatus
     };
 }

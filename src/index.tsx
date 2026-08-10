@@ -532,7 +532,7 @@ export default definePlugin(() => {
         console.error("Timeout: Failed to register game listeners", e);
     }
 
-    // Inject CSS so modal portals always render above the screensaver overlay.
+    // Inject CSS so modal portals always render at a controlled z-index.
     const modalStyleId = 'timeout-modal-zindex-fix';
     if (!document.getElementById(modalStyleId)) {
         const style = document.createElement('style');

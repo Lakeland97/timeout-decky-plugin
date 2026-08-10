@@ -10,7 +10,6 @@ export interface Timer {
     subtle_mode?: boolean;
     auto_suspend?: boolean;
     prevent_sleep?: boolean;
-    screensaver_mode?: 'off' | 'black' | 'dim';
     remaining?: number;
     paused?: boolean;
     paused_remaining?: number;
@@ -35,7 +34,6 @@ export interface Alarm {
     auto_suspend?: boolean;   // per-alarm auto suspend override
     prevent_sleep?: boolean;  // per-alarm prevent sleep override
     prevent_sleep_window?: number; // minutes before alarm to start preventing sleep
-    screensaver_mode?: 'off' | 'black' | 'dim';
 }
 
 // Sound file types
@@ -52,7 +50,6 @@ export interface Preset {
     subtle_mode?: boolean;
     auto_suspend?: boolean;
     prevent_sleep?: boolean;
-    screensaver_mode?: 'off' | 'black' | 'dim';
 }
 
 // Pomodoro types
@@ -70,7 +67,6 @@ export interface PomodoroState {
     volume?: number;
     subtle_mode?: boolean;
     prevent_sleep?: boolean;
-    screensaver_mode?: 'off' | 'black' | 'dim';
     stats?: PomodoroStats;
 }
 
@@ -150,51 +146,6 @@ export interface UserSettings {
     presets_max_visible: number;
     // Tab Order
     tab_order?: string[];
-    // Screensaver settings
-    screensaver_mode: 'off' | 'black' | 'dim' | 'wallpaper';
-    screensaver_dim_opacity: number;
-    pomodoro_screensaver_mode: 'off' | 'black' | 'dim';
-    screensaver_idle_seconds: number;
-    overlay_during_screensaver: boolean;
-    overlay_screensaver_show_clock?: boolean;
-    overlay_screensaver_show_date?: boolean;
-    overlay_screensaver_show_battery?: boolean;
-    // Screensaver 2.0 settings
-    screensaver_standalone_enabled?: boolean;
-    screensaver_standalone_idle_seconds?: number;
-    overlay_screensaver_layout?: ScreensaverLayout;
-    screensaver_clock_style?: ClockStyle;
-    screensaver_clock_size?: number;
-    screensaver_accent_color?: AccentColorPreset;
-    screensaver_show_day_of_week?: boolean;
-    screensaver_show_year?: boolean;
-    screensaver_show_calendar_grid?: boolean;
-    screensaver_battery_show_bar?: boolean;
-    screensaver_battery_low_threshold?: number;
-    screensaver_show_alerts_list?: boolean;
-    screensaver_show_system_stats?: boolean;
-    screensaver_show_network_info?: boolean;
-    screensaver_show_weather?: boolean;
-    screensaver_weather_lat?: number | null;
-    screensaver_weather_lon?: number | null;
-    screensaver_weather_city_name?: string | null;
-    screensaver_weather_unit?: "C" | "F";
-    screensaver_weather_show_highlow?: boolean;
-    screensaver_weather_show_condition?: boolean;
-    screensaver_weather_refresh_minutes?: number;
-    screensaver_weather_location_source?: 'manual' | 'ip' | null;
-    screensaver_nasa_api_key?: string;
-    screensaver_wallpaper_show_attribution?: boolean;
-    screensaver_wallpaper_provider?: WallpaperProvider;
-    screensaver_wallpaper_fit?: WallpaperFit;
-    screensaver_wallpaper_blur?: WallpaperBlur;
-    screensaver_wallpaper_dim?: number;
-    screensaver_wallpaper_interval?: number;
-    screensaver_wallpaper_pool_size?: number;
-    screensaver_wallpaper_auto_rotate?: boolean;
-    screensaver_wallpaper_cache_updated_at?: string | null;
-    screensaver_wallpaper_shift_local?: boolean;
-    screensaver_floating_drift_range?: number;
     // Pixel shift
     pixel_shift_enabled?: boolean;
     pixel_shift_range?: number;
@@ -215,17 +166,12 @@ export interface SleepInhibitorItem {
     type: string;
     id: string;
     label: string;
-    screensaver_mode?: 'off' | 'black' | 'dim';
 }
 
 export interface SleepInhibitorStatus {
     active: boolean;
     reason?: string;
     items?: SleepInhibitorItem[];
-    screensaver_mode?: 'off' | 'black' | 'dim' | 'wallpaper';
-    screensaver_dim_opacity?: number;
-    screensaver_idle_seconds?: number;
-    overlay_during_screensaver?: boolean;
 }
 
 export interface MissedItem {
@@ -299,9 +245,6 @@ export interface OverlayAlert {
 
 // Tab types
 export type TabId = 'timers' | 'alarms' | 'pomodoro' | 'settings';
-
-// Screensaver 2.0 types
-export type ScreensaverLayout = 'compact' | 'large' | 'fullscreen';
 
 export type ClockStyle = 'digital' | 'digital_seconds' | 'digital_large' | 'analog';
 

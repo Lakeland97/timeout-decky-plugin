@@ -441,8 +441,7 @@ class Plugin:
     async def create_timer(self, seconds: int, label: str = "",
                           subtle_mode: bool = None,
                           auto_suspend: bool = None,
-                          prevent_sleep: bool = None,
-                          screensaver_mode: str = None) -> str:
+                          prevent_sleep: bool = None) -> str:
         """Create a new countdown timer."""
         # Check limit
         timers = await self._get_timers()
@@ -460,8 +459,6 @@ class Plugin:
             auto_suspend = user_settings.get("timer_auto_suspend", False)
         if prevent_sleep is None:
             prevent_sleep = False
-        if screensaver_mode is None:
-            screensaver_mode = user_settings.get("screensaver_mode", "off")
         if auto_suspend:
             subtle_mode = True
         
@@ -478,7 +475,6 @@ class Plugin:
             "subtle_mode": subtle_mode,
             "auto_suspend": auto_suspend,
             "prevent_sleep": prevent_sleep,
-            "screensaver_mode": screensaver_mode
         }
         
         # Save to settings
@@ -487,7 +483,7 @@ class Plugin:
         await self._save_timers(timers)
         
         # Save to recent timers (for quick access)
-        await self._add_to_recent_timers(seconds, label, subtle_mode, auto_suspend, prevent_sleep, screensaver_mode)
+        await self._add_to_recent_timers(seconds, label, subtle_mode, auto_suspend, prevent_sleep)
         
         # Start the timer task
         self.timer_tasks[timer_id] = self.loop.create_task(
@@ -696,7 +692,7 @@ class Plugin:
         await self.settings_commit()
         return True
 
-    async def _add_to_recent_timers(self, seconds: int, label: str, subtle_mode: bool = False, auto_suspend: bool = False, prevent_sleep: bool = False, screensaver_mode: str = "off"):
+    async def _add_to_recent_timers(self, seconds: int, label: str, subtle_mode: bool = False, auto_suspend: bool = False, prevent_sleep: bool = False):
         """Add a timer to the recent timers list (max 5, dedup by seconds+label+modes)."""
         recent = await self.get_recent_timers()
         
@@ -707,17 +703,15 @@ class Plugin:
             "subtle_mode": subtle_mode,
             "auto_suspend": auto_suspend,
             "prevent_sleep": prevent_sleep,
-            "screensaver_mode": screensaver_mode
         }
         
-        # Remove duplicates (same seconds, label, subtle_mode, auto_suspend, prevent_sleep, and screensaver_mode)
+        # Remove duplicates (same seconds, label, subtle_mode, auto_suspend, prevent_sleep)
         recent = [r for r in recent if not (
             r.get("seconds") == seconds and 
             r.get("label") == new_entry["label"] and
             r.get("subtle_mode", False) == subtle_mode and
             r.get("auto_suspend", False) == auto_suspend and
-            r.get("prevent_sleep", False) == prevent_sleep and
-            r.get("screensaver_mode", "off") == screensaver_mode
+            r.get("prevent_sleep", False) == prevent_sleep
         )]
         
         # Add to front
@@ -736,8 +730,7 @@ class Plugin:
                           volume: int = 100, subtle_mode: bool = False, 
                           auto_suspend: bool = False,
                           prevent_sleep: bool = False,
-                          prevent_sleep_window: int = 60,
-                          screensaver_mode: str = "off") -> str:
+                          prevent_sleep_window: int = 60) -> str:
         """
         Create a new alarm.
         recurring: 'once', 'daily', 'weekdays', 'weekends', or comma-separated days (0-6, 0=Monday)
@@ -781,7 +774,6 @@ class Plugin:
             "auto_suspend": auto_suspend,
             "prevent_sleep": prevent_sleep,
             "prevent_sleep_window": prevent_sleep_window,
-            "screensaver_mode": screensaver_mode
         }
         
         alarms = await self._get_alarms()
@@ -830,8 +822,7 @@ class Plugin:
                           subtle_mode: bool = False,
                           auto_suspend: bool = False,
                           prevent_sleep: bool = False,
-                          prevent_sleep_window: int = 60,
-                          screensaver_mode: str = "off") -> bool:
+                          prevent_sleep_window: int = 60) -> bool:
         """Update an existing alarm's settings."""
         alarms = await self._get_alarms()
         if alarm_id in alarms:
@@ -856,7 +847,6 @@ class Plugin:
             alarm["auto_suspend"] = auto_suspend
             alarm["prevent_sleep"] = prevent_sleep
             alarm["prevent_sleep_window"] = prevent_sleep_window
-            alarm["screensaver_mode"] = screensaver_mode
             # Re-enable alarm when edited (user expects it to be active)
             alarm["enabled"] = True
             # Clear snooze and last_triggered when alarm time changes
@@ -1890,8 +1880,7 @@ class Plugin:
 
     async def save_preset(self, seconds: int, label: str, 
                           subtle_mode: bool = False, auto_suspend: bool = False,
-                          prevent_sleep: bool = False,
-                          screensaver_mode: str = "off") -> dict:
+                          prevent_sleep: bool = False) -> dict:
         """Save a new timer preset with all options. Overwrites oldest if max is reached.
         Moves existing identical presets to the top instead of duplicating."""
         user_settings = await self._get_user_settings()
@@ -1912,8 +1901,7 @@ class Plugin:
                 p.get("label") == label and 
                 bool(p.get("subtle_mode", False)) == bool(subtle_mode) and 
                 bool(p.get("auto_suspend", False)) == bool(auto_suspend) and
-                bool(p.get("prevent_sleep", False)) == bool(prevent_sleep) and
-                p.get("screensaver_mode", "off") == screensaver_mode):
+                bool(p.get("prevent_sleep", False)) == bool(prevent_sleep)):
                 existing_idx = i
                 preset_id = p.get("id")
                 break
@@ -1928,7 +1916,6 @@ class Plugin:
             "subtle_mode": subtle_mode,
             "auto_suspend": auto_suspend,
             "prevent_sleep": prevent_sleep,
-            "screensaver_mode": screensaver_mode
         }
         
         # Insert at the beginning (index 0) so the newest is always visible
@@ -1960,7 +1947,6 @@ class Plugin:
             subtle_mode=timer.get("subtle_mode", False),
             auto_suspend=timer.get("auto_suspend", False),
             prevent_sleep=timer.get("prevent_sleep", False),
-            screensaver_mode=timer.get("screensaver_mode", "off")
         )
 
     async def remove_preset(self, preset_id: str) -> bool:
@@ -2007,7 +1993,7 @@ class Plugin:
                 await self.settings_setSetting(SETTINGS_KEY_PRESETS, presets)
                 await decky.emit("timeout_presets_updated", presets)
         
-        # Update sleep inhibitor if prevent_sleep or screensaver settings changed
+        # Update sleep inhibitor if prevent_sleep settings changed
         if any(k in new_settings for k in ("pomodoro_prevent_sleep", "timer_prevent_sleep")):
             await self._update_sleep_inhibitor()
                 
