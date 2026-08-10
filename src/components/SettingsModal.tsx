@@ -12,7 +12,7 @@ import {
     ToggleField
 } from "@decky/ui";
 import { callable } from "@decky/api";
-import { FaVolumeUp, FaBell, FaClock, FaBrain, FaCoffee, FaPlay, FaPause, FaHourglassHalf, FaSave, FaFileImport, FaBullseye, FaMusic, FaTrash, FaCog, FaDatabase, FaEye, FaGamepad, FaHistory, FaBellSlash, FaStar, FaShieldAlt } from "react-icons/fa";
+import { FaVolumeUp, FaBell, FaClock, FaBrain, FaCoffee, FaPlay, FaPause, FaHourglassHalf, FaSave, FaFileImport, FaBullseye, FaMusic, FaTrash, FaCog, FaDatabase, FaEye, FaGamepad, FaHistory, FaBellSlash, FaShieldAlt } from "react-icons/fa";
 import { useEffect, useState, useRef } from "react";
 import { useSettings } from "../hooks/useSettings";
 import { useUIComposition, UIComposition } from "../utils/uiComposition";
@@ -119,82 +119,6 @@ const SoundPreviewButton = ({
 
 // Binary selector for suspend behavior options
 // ==================== BinarySelector is now in ./BinarySelector.tsx ====================
-
-// Timer Settings Page
-const TimerSettingsPage = () => {
-    const { settings, updateSetting } = useSettings();
-    const { getSounds, playCustomSound } = useAlarms();
-    const [sounds, setSounds] = useState<SoundFile[]>([{ filename: 'alarm.mp3', name: 'Alarm' }]);
-
-    useEffect(() => {
-        getSounds().then(setSounds);
-    }, []);
-
-    return (
-        <ScrollableContent>
-            <PanelSection>
-                <PanelSectionRow>
-                    <Focusable flow-children="row" style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
-                        <FaHourglassHalf style={{ color: '#888', flexShrink: 0 }} />
-                        <span style={{ flexShrink: 0 }}>Sound</span>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                            <Dropdown
-                                rgOptions={sounds.map(s => ({ data: s.filename, label: s.name }))}
-                                selectedOption={settings.timer_sound || 'alarm.mp3'}
-                                onChange={(option) => updateSetting('timer_sound', option.data as string)}
-                                strDefaultLabel="Select Sound"
-                            />
-                        </div>
-                        {settings.timer_sound !== 'soundless' && (
-                            <SoundPreviewButton soundFile={settings.timer_sound || 'alarm.mp3'} onPlayCustom={playCustomSound} />
-                        )}
-                    </Focusable>
-                </PanelSectionRow>
-
-                {settings.timer_sound !== 'soundless' && (
-                    <PanelSectionRow>
-                        <SliderField
-                            label="Volume"
-                            description={`${settings.timer_volume ?? 100}%`}
-                            value={settings.timer_volume ?? 100}
-                            min={0}
-                            max={100}
-                            step={5}
-                            onChange={(value) => updateSetting('timer_volume', value)}
-                            icon={<FaVolumeUp size={16} />}
-                        />
-                    </PanelSectionRow>
-                )}
-
-                <PanelSectionRow>
-                    <ToggleField
-                        icon={<FaStar size={16} />}
-                        label="Saved Presets"
-                        description="Show preset buttons for quickly starting timers"
-                        checked={settings.presets_enabled ?? true}
-                        onChange={(value) => updateSetting('presets_enabled', value)}
-                    />
-                </PanelSectionRow>
-                {settings.presets_enabled && (
-                    <PanelSectionRow>
-                        <div style={{ paddingLeft: '40px' }}>
-                            <SliderField
-                                label="Max Visible Presets"
-                                description={`${settings.presets_max_visible ?? 5} presets`}
-                                value={settings.presets_max_visible ?? 5}
-                                min={1}
-                                max={10}
-                                step={1}
-                                onChange={(value) => updateSetting('presets_max_visible', value)}
-                                icon={<FaClock size={16} />}
-                            />
-                        </div>
-                    </PanelSectionRow>
-                )}
-            </PanelSection>
-        </ScrollableContent>
-    );
-};
 
 // Alarm Settings Page
 const AlarmSettingsPage = () => {
@@ -1017,11 +941,6 @@ export const SettingsPage = () => {
             title: "General",
             icon: <FaCog size={16} />,
             content: <GeneralSettingsPage />
-        },
-        {
-            title: "Timers",
-            icon: <FaHourglassHalf size={16} />,
-            content: <TimerSettingsPage />
         },
         {
             title: "Alarms",

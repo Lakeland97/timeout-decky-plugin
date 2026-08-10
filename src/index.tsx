@@ -17,7 +17,6 @@ import { FaBell, FaCog, FaBrain, FaHourglassHalf, FaShieldAlt } from "react-icon
 import { useState, useEffect, useRef, useMemo } from "react";
 
 // Components
-import { TimerPanel } from "./components/TimerPanel";
 import { AlarmPanel } from "./components/AlarmPanel";
 import { PomodoroPanel } from "./components/PomodoroPanel";
 import { SettingsPage, SETTINGS_ROUTE, navigateToSettings } from "./components/SettingsModal";
@@ -32,26 +31,22 @@ import { SteamUtils } from "./utils/steam";
 import { formatTime } from "./utils/time";
 import { useSettings } from "./hooks/useSettings";
 import { useSleepInhibitor } from "./hooks/useSleepInhibitor";
-import { useTimers } from "./hooks/useTimers";
 import { usePomodoro } from "./hooks/usePomodoro";
 import { useMissedAlerts } from "./hooks/useMissedAlerts";
 import { MODAL_ZINDEX_CSS } from "./utils/zIndex";
 
 // Types
 import type {
-    TimerCompletedEvent,
     AlarmTriggeredEvent,
     PomodoroState,
 } from "./types";
 
 // Backend callables
 const snoozeAlarm = callable<[alarm_id: string, minutes: number], boolean>('snooze_alarm');
-const snoozeTimerCall = callable<[timer_id: string, minutes: number], boolean>('snooze_timer');
-const cancelTimerCall = callable<[timer_id: string], boolean>('cancel_timer');
 const setGameRunning = callable<[is_running: boolean], void>('set_game_running');
 
 // Tab configuration
-type TabId = 'timers' | 'alarms' | 'pomodoro';
+type TabId = 'alarms' | 'pomodoro';
 
 interface Tab {
     id: TabId;
@@ -60,7 +55,6 @@ interface Tab {
 }
 
 const TABS: Tab[] = [
-    { id: 'timers', label: 'Timers', icon: <FaHourglassHalf size={16} /> },
     { id: 'alarms', label: 'Alarms', icon: <FaBell size={16} /> },
     { id: 'pomodoro', label: 'Focus', icon: <FaBrain size={16} /> },
 ];
@@ -126,7 +120,7 @@ const TabButton = ({ tab, active, hasActiveItems, onClick }: TabButtonProps) => 
 
 // Main Content Component
 function Content() {
-    const [activeTab, setActiveTab] = useState<TabId>('timers');
+    const [activeTab, setActiveTab] = useState<TabId>('pomodoro');
     const { settings: userSettings } = useSettings();
     const { isActive: sleepInhibitorActive, items: sleepInhibitorItems } = useSleepInhibitor();
     const { missedItems, hasMissedAlerts, hasNewMissedAlerts, markAsSeen } = useMissedAlerts();
@@ -134,11 +128,9 @@ function Content() {
     const contentRef = useRef<HTMLDivElement>(null);
 
     // Track active items for tab indicators
-    const { timers } = useTimers();
     const { state: pomodoroState } = usePomodoro();
 
     // Calculate which tabs have active items
-    const hasActiveTimers = timers.some(t => !t.paused);
     const hasActivePomodoro = pomodoroState.active;
 
     // Sort tabs based on settings, or use default order
@@ -361,8 +353,7 @@ function Content() {
                     >
                         {orderedTabs.map(tab => {
                             let hasActiveItems = false;
-                            if (tab.id === 'timers') hasActiveItems = hasActiveTimers;
-                            else if (tab.id === 'pomodoro') hasActiveItems = hasActivePomodoro;
+                            if (tab.id === 'pomodoro') hasActiveItems = hasActivePomodoro;
                             
                             return (
                                 <TabButton
@@ -379,7 +370,6 @@ function Content() {
             </PanelSection>
 
             {/* Tab Content */}
-            {activeTab === 'timers' && <TimerPanel />}
             {activeTab === 'alarms' && <AlarmPanel />}
             {activeTab === 'pomodoro' && <PomodoroPanel />}
         </div>
@@ -392,39 +382,6 @@ export default definePlugin(() => {
     const getTimeStr = (use24h: boolean = true) => {
         const now = new Date();
         return formatTime(now.getHours(), now.getMinutes(), use24h);
-    };
-
-    const handleTimerCompleted = (event: TimerCompletedEvent) => {
-        // Auto-suspend forces subtle mode (modal before suspend makes no sense)
-        const useSubtle = event.subtle || event.auto_suspend;
-        const use24h = event.time_format_24h ?? true;
-
-        if (useSubtle) {
-            toaster.toast({
-                title: "⏰ Timer Finished!",
-                body: `${event.label} • ${getTimeStr(use24h)}`
-            });
-            // Play sound briefly for non-subtle with auto-suspend
-            if (!event.subtle && event.auto_suspend) {
-                playAlarmSound(event.sound || 'alarm.mp3', event.volume);
-            }
-            // Suspend after toast is visible
-            if (event.auto_suspend) {
-                setTimeout(() => SteamUtils.suspend(), 3000);
-            }
-        } else {
-            showSnoozeModal({
-                id: event.id,
-                label: event.label,
-                type: 'timer',
-                sound: event.sound,
-                volume: event.volume,
-                use24h,
-                snoozeActivationDelay: event.snooze_activation_delay,
-                onSnooze: (minutes) => snoozeTimerCall(event.id, minutes),
-                onDismiss: () => cancelTimerCall(event.id),
-            });
-        }
     };
 
     const handleAlarmTriggered = (event: AlarmTriggeredEvent) => {
@@ -488,7 +445,6 @@ export default definePlugin(() => {
     };
 
     // Register event listeners
-    addEventListener('timeout_timer_completed', handleTimerCompleted);
     addEventListener('timeout_alarm_triggered', handleAlarmTriggered);
     addEventListener('timeout_pomodoro_work_ended', handlePomodoroWorkEnded);
     addEventListener('timeout_pomodoro_break_ended', handlePomodoroBreakEnded);
@@ -565,7 +521,6 @@ export default definePlugin(() => {
         alwaysRender: true, // Keep plugin state active for overlay visibility
 
         onDismount: () => {
-            removeEventListener('timeout_timer_completed', handleTimerCompleted);
             removeEventListener('timeout_alarm_triggered', handleAlarmTriggered);
             removeEventListener('timeout_pomodoro_work_ended', handlePomodoroWorkEnded);
             removeEventListener('timeout_pomodoro_break_ended', handlePomodoroBreakEnded);

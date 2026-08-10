@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { addEventListener, removeEventListener, callable } from '@decky/api';
-import type { OverlayAlert, UserSettings, TimerTickEvent, PomodoroTickEvent } from '../types';
+import type { OverlayAlert, UserSettings, PomodoroTickEvent } from '../types';
 
 // Backend callable
 const getOverlayDataCall = callable<[], { alerts: OverlayAlert[]; settings: Record<string, any> }>('get_overlay_data');
@@ -38,20 +38,10 @@ export function useOverlayData(settings: UserSettings, isGameRunning?: boolean) 
         fetchOverlayData();
 
         // Re-fetch when data sources change
-        const handleTimersUpdated = () => fetchOverlayData();
         const handleAlarmsUpdated = () => fetchOverlayData();
         const handlePomodoroStarted = () => fetchOverlayData();
         const handlePomodoroStopped = () => fetchOverlayData();
         const handlePomodoroPhaseChanged = () => fetchOverlayData();
-
-        // Real-time tick updates for timers (update remaining in-place)
-        const handleTimerTick = (event: TimerTickEvent) => {
-            setAlerts(prev => prev.map(alert =>
-                alert.id === `timer-${event.id}`
-                    ? { ...alert, remaining: event.remaining }
-                    : alert
-            ));
-        };
 
         // Real-time tick updates for pomodoro
         const handlePomodoroTick = (event: PomodoroTickEvent) => {
@@ -66,24 +56,20 @@ export function useOverlayData(settings: UserSettings, isGameRunning?: boolean) 
             ));
         };
 
-        addEventListener('timeout_timers_updated', handleTimersUpdated);
         addEventListener('timeout_alarms_updated', handleAlarmsUpdated);
         addEventListener('timeout_pomodoro_started', handlePomodoroStarted);
         addEventListener('timeout_pomodoro_stopped', handlePomodoroStopped);
         addEventListener('timeout_pomodoro_phase_changed', handlePomodoroPhaseChanged);
-        addEventListener('timeout_timer_tick', handleTimerTick);
         addEventListener('timeout_pomodoro_tick', handlePomodoroTick);
 
         // Periodic refresh for alarm countdown updates (every 30s)
         const refreshInterval = setInterval(fetchOverlayData, 30000);
 
         return () => {
-            removeEventListener('timeout_timers_updated', handleTimersUpdated);
             removeEventListener('timeout_alarms_updated', handleAlarmsUpdated);
             removeEventListener('timeout_pomodoro_started', handlePomodoroStarted);
             removeEventListener('timeout_pomodoro_stopped', handlePomodoroStopped);
             removeEventListener('timeout_pomodoro_phase_changed', handlePomodoroPhaseChanged);
-            removeEventListener('timeout_timer_tick', handleTimerTick);
             removeEventListener('timeout_pomodoro_tick', handlePomodoroTick);
             clearInterval(refreshInterval);
         };
@@ -99,7 +85,6 @@ export function useOverlayData(settings: UserSettings, isGameRunning?: boolean) 
         settings.overlay_position,
         settings.overlay_custom_x,
         settings.overlay_custom_y,
-        settings.overlay_show_timers,
         settings.overlay_show_alarms,
         settings.overlay_show_pomodoros,
         settings.overlay_time_window,

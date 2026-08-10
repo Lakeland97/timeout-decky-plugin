@@ -1,20 +1,5 @@
 // TypeScript type definitions for Timeout plugin
 
-// Timer types
-export interface Timer {
-    id: string;
-    label: string;
-    seconds: number;
-    end_time: number;
-    created_at: number;
-    subtle_mode?: boolean;
-    auto_suspend?: boolean;
-    prevent_sleep?: boolean;
-    remaining?: number;
-    paused?: boolean;
-    paused_remaining?: number;
-}
-
 // Alarm types
 export type RecurringType = 'once' | 'daily' | 'weekdays' | 'weekends' | string;
 
@@ -40,16 +25,6 @@ export interface Alarm {
 export interface SoundFile {
     filename: string;
     name: string;
-}
-
-// Preset types
-export interface Preset {
-    id: string;
-    seconds: number;
-    label: string;
-    subtle_mode?: boolean;
-    auto_suspend?: boolean;
-    prevent_sleep?: boolean;
 }
 
 // Pomodoro types
@@ -95,12 +70,6 @@ export interface DailyHistoryEntry {
 export interface UserSettings {
     snooze_duration: number;      // default snooze for alarms
     time_format_24h: boolean;
-    // Timer settings
-    timer_sound: string;
-    timer_volume: number;
-    timer_subtle_mode: boolean;
-    timer_auto_suspend: boolean;
-    timer_prevent_sleep: boolean;
     // Pomodoro settings
     pomodoro_sound: string;
     pomodoro_volume: number;
@@ -141,9 +110,6 @@ export interface UserSettings {
     prevent_sleep_pomodoro?: boolean;
     prevent_sleep_alarms?: boolean;
     prevent_sleep_alarms_window?: number;  // minutes before alarm to keep awake
-    // Timer presets settings
-    presets_enabled: boolean;
-    presets_max_visible: number;
     // Tab Order
     tab_order?: string[];
     // Pixel shift
@@ -184,17 +150,6 @@ export interface MissedItem {
 }
 
 // Event payload types
-export interface TimerCompletedEvent {
-    id: string;
-    label: string;
-    subtle: boolean;
-    sound?: string;
-    volume?: number;
-    auto_suspend?: boolean;
-    time_format_24h?: boolean;
-    snooze_activation_delay?: number;
-}
-
 export interface AlarmTriggeredEvent {
     id: string;
     label: string;
@@ -205,11 +160,6 @@ export interface AlarmTriggeredEvent {
     auto_suspend?: boolean;
     time_format_24h?: boolean;
     snooze_activation_delay?: number;
-}
-
-export interface TimerTickEvent {
-    id: string;
-    remaining: number;
 }
 
 export interface PomodoroTickEvent {
