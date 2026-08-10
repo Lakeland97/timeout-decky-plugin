@@ -8,47 +8,46 @@ Play-time discipline, focus with teeth, and optional parental lockout for Steam 
 
 > **Timeout is in early development.** Focus sessions work today. **Game Limits**, **Focus enforcement tiers**, and **Parental controls** are on the roadmap below.
 
-## Today
+## Features
+
+Strikethrough = shipped. Plain = planned.
 
 ### ⚡ Focus
-- **Focus sessions** - Schedule and run timed focus sessions
-- **Statistics** - Daily and lifetime focus time, sessions, and cycles
-- **Skip controls** - Skip to a break or back to work anytime
-- **Background persistence** - Keeps running when you close the menu
+- ~~Focus sessions~~
+- ~~Statistics~~
+- ~~Skip controls~~
+- ~~Background persistence~~
 
 ### 🔊 Custom sounds
-- Per-feature sounds; import your own `.mp3`, `.wav`, or `.ogg` from `~/Music/Timeout_Sounds`
+- ~~Import custom sounds~~
 
 ### 💤 Prevent sleep
-- Keep the Deck awake during active focus sessions, using native SteamOS input inhibition
+- ~~SteamOS sleep inhibition~~
 
 ### 💾 Backup & restore
-- Export your settings and data; move between devices or restore after a re-install
-
-## Planned
-
-The discipline layer that makes Timeout *Timeout*.
+- ~~Export/import backup~~
 
 ### 🎮 Game Limits
-Bound how and when games are played.
-- **Game selection** - whitelist or blacklist which games are limited
-- **Limits** - a global default plus per-game overrides
-- **Budgets** - a daily open budget (e.g. 3 opens/day) and/or a per-session time cap (e.g. 20 min/open), resetting at midnight
-- **Half-opens** - quit a session past a threshold to bank a partial open instead of losing the whole budget
-- **Cooldowns** - optional, compounding, between sessions
-- **Curfew** - day-of-week-aware time windows (e.g. no play 12am-5am)
-- **Concession** - a one-time "5 more minutes" so a curfew hit can save/finish
+- Game selection
+- Limits
+- Budgets
+- Half-opens
+- Cooldowns
+- Curfew
+- Concession
 
 ### 🎯 Focus enforcement tiers
-Escalation levels (loose / steady / strict) so focus sessions have actual teeth - not just a prompt you can dismiss.
+- Loose
+- Steady
+- Strict
 
 ### 🔒 Parental controls + passcode
-Distinguish self-control mode (you setting your own limits) from administrative lockout (a parent/guardian setting limits someone else can't bypass).
+- Self-control mode
+- Administrative lockout
 
-### 🔥 Streaks (span everything)
-A unified streak metric across all discipline features - focus adherence, game-limits adherence, and more. Disabling a limit costs your streak, with one asymmetry: turning off an **open limit** breaks the streak immediately; turning off a **time limit** breaks it only if you then exceed the cap.
+### 🔥 Streaks
 
-> Have thoughts? [Open an issue](https://github.com/Lakeland97/timeout-decky-plugin/issues) - Game Limits is the furthest along.
+> [Open an issue](https://github.com/Lakeland97/timeout-decky-plugin/issues) if you have feedback.
 
 ## Installation
 
