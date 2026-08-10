@@ -27,15 +27,12 @@ SETTINGS_KEY_PRESETS = "presets"
 SETTINGS_KEY_SETTINGS = "user_settings"
 SETTINGS_KEY_POMODORO = "pomodoro_state"
 SETTINGS_KEY_RECENT_TIMERS = "recent_timers"
-SETTINGS_KEY_STOPWATCH = "stopwatch_state"
 
 # Limits to prevent excessive data
 MAX_ACTIVE_TIMERS = 50
 MAX_ALARMS = 100
 MAX_RECENT_TIMERS = 20
 MAX_PRESETS = 50
-MAX_STOPWATCH_LAPS = 100
-MAX_STOPWATCH_RUNTIME_MS = 24 * 60 * 60 * 1000  # 24 hours in milliseconds
 
 # Default user settings
 DEFAULT_SETTINGS = {
@@ -75,7 +72,6 @@ DEFAULT_SETTINGS = {
     "overlay_show_timers": True,
     "overlay_show_alarms": True,
     "overlay_show_pomodoros": True,
-    "overlay_show_stopwatch": False,
     "overlay_compact_mode": False,
     "overlay_show_prevent_sleep_badge": True,
     "overlay_show_missed_badge": True,
@@ -83,7 +79,7 @@ DEFAULT_SETTINGS = {
     "presets_enabled": True,
     "presets_max_visible": 5,
     # Tab Order
-    "tab_order": ["timers", "alarms", "pomodoro", "stopwatch"]
+    "tab_order": ["timers", "alarms", "pomodoro"]
 }
 
 # Default presets
@@ -1875,196 +1871,6 @@ class Plugin:
         await self.settings_setSetting(SETTINGS_KEY_POMODORO, state)
         await self.settings_commit()
 
-    # ==================== STOPWATCH METHODS ====================
-
-    async def _get_stopwatch_state(self) -> dict:
-        return await self.settings_getSetting(SETTINGS_KEY_STOPWATCH, {
-            "status": "idle",
-            "start_time": None,
-            "elapsed_ms": 0,
-            "laps": [],
-            "prevent_sleep": False
-        })
-
-    async def _save_stopwatch_state(self, state: dict):
-        await self.settings_setSetting(SETTINGS_KEY_STOPWATCH, state)
-        await self.settings_commit()
-
-    async def stopwatch_get_state(self) -> dict:
-        """Get current stopwatch state. Auto-resets if max runtime exceeded."""
-        state = await self._get_stopwatch_state()
-        
-        if state.get("status") == "running" and state.get("start_time"):
-            running_ms = (time.time() - state["start_time"]) * 1000
-            current_elapsed = state.get("elapsed_ms", 0) + running_ms
-            
-            # Check max runtime limit
-            if current_elapsed >= MAX_STOPWATCH_RUNTIME_MS:
-                decky.logger.info(f"AlarMe: Stopwatch max runtime ({MAX_STOPWATCH_RUNTIME_MS}ms) exceeded, auto-resetting")
-                await self.stopwatch_reset()
-                state = await self._get_stopwatch_state()
-                state["current_elapsed_ms"] = 0
-                state["auto_reset"] = True
-                return state
-            
-            state["current_elapsed_ms"] = current_elapsed
-        else:
-            state["current_elapsed_ms"] = state.get("elapsed_ms", 0)
-        
-        return state
-
-    async def stopwatch_start(self) -> dict:
-        """Start or resume the stopwatch."""
-        state = await self._get_stopwatch_state()
-        
-        if state.get("status") == "running":
-            return await self.stopwatch_get_state()
-        
-        state["status"] = "running"
-        state["start_time"] = time.time()
-        
-        await self._save_stopwatch_state(state)
-        await self._update_sleep_inhibitor()
-        
-        await decky.emit("alarme_stopwatch_updated", state)
-        
-        decky.logger.info("AlarMe: Stopwatch started")
-        return await self.stopwatch_get_state()
-
-    async def stopwatch_pause(self) -> dict:
-        """Pause the stopwatch."""
-        state = await self._get_stopwatch_state()
-        
-        if state.get("status") != "running":
-            return await self.stopwatch_get_state()
-        
-        if state.get("start_time"):
-            running_ms = (time.time() - state["start_time"]) * 1000
-            state["elapsed_ms"] = state.get("elapsed_ms", 0) + running_ms
-        
-        state["status"] = "paused"
-        state["start_time"] = None
-        
-        await self._save_stopwatch_state(state)
-        await self._update_sleep_inhibitor()
-        
-        # Emit an event to force overlay update since stopwatch is no longer running/preventing sleep
-        await decky.emit("alarme_stopwatch_updated", state)
-        
-        decky.logger.info(f"AlarMe: Stopwatch paused at {state['elapsed_ms']:.0f}ms")
-        return await self.stopwatch_get_state()
-
-    async def stopwatch_reset(self) -> dict:
-        """Reset the stopwatch to initial state."""
-        state = {
-            "status": "idle",
-            "start_time": None,
-            "elapsed_ms": 0,
-            "laps": []
-        }
-        
-        await self._save_stopwatch_state(state)
-        await self._update_sleep_inhibitor()
-        
-        # Emit an event to force overlay update since stopwatch is reset
-        await decky.emit("alarme_stopwatch_updated", state)
-        
-        decky.logger.info("AlarMe: Stopwatch reset")
-        return await self.stopwatch_get_state()
-
-    async def stopwatch_lap(self) -> dict:
-        """Record a lap time. Returns state with 'lap_limit_reached' flag if max laps exceeded."""
-        state = await self._get_stopwatch_state()
-        
-        if state.get("status") != "running":
-            return await self.stopwatch_get_state()
-        
-        current_ms = state.get("elapsed_ms", 0)
-        if state.get("start_time"):
-            current_ms += (time.time() - state["start_time"]) * 1000
-        
-        laps = state.get("laps", [])
-        
-        # Track total lap count separately (continues incrementing even after limit)
-        total_lap_count = state.get("total_lap_count", len(laps))
-        total_lap_count += 1
-        
-        lap_limit_reached = False
-        
-        if laps:
-            last_lap_absolute = laps[-1].get("absolute_ms", 0)
-            split_ms = current_ms - last_lap_absolute
-        else:
-            split_ms = current_ms
-        
-        new_lap = {
-            "label": f"Lap {total_lap_count}",
-            "absolute_ms": current_ms,
-            "split_ms": split_ms
-        }
-        
-        # Enforce max laps limit - remove oldest when exceeded
-        if len(laps) >= MAX_STOPWATCH_LAPS:
-            laps.pop(0)
-            lap_limit_reached = True
-            decky.logger.info(f"AlarMe: Stopwatch lap limit ({MAX_STOPWATCH_LAPS}) reached, removing oldest lap")
-        
-        laps.append(new_lap)
-        state["laps"] = laps
-        state["total_lap_count"] = total_lap_count
-        
-        await self._save_stopwatch_state(state)
-        decky.logger.info(f"AlarMe: Lap {total_lap_count} recorded at {current_ms:.0f}ms (split: {split_ms:.0f}ms)")
-        
-        result = await self.stopwatch_get_state()
-        result["lap_limit_reached"] = lap_limit_reached
-        return result
-
-    async def stopwatch_set_prevent_sleep(self, prevent_sleep: bool, screensaver_mode: str = "off") -> dict:
-        """Set prevent_sleep and screensaver_mode options for stopwatch."""
-        state = await self._get_stopwatch_state()
-        state["prevent_sleep"] = prevent_sleep
-        state["screensaver_mode"] = screensaver_mode
-        await self._save_stopwatch_state(state)
-        await self._update_sleep_inhibitor()
-        
-        await decky.emit("alarme_stopwatch_updated", state)
-        
-        decky.logger.info(f"AlarMe: Stopwatch prevent_sleep set to {prevent_sleep}, screensaver_mode={screensaver_mode}")
-        return await self.stopwatch_get_state()
-
-    async def stopwatch_get_laps_text(self) -> str:
-        """Get formatted lap list for clipboard copy in tab-separated format."""
-        state = await self._get_stopwatch_state()
-        laps = state.get("laps", [])
-        
-        if not laps:
-            return ""
-        
-        lines = ["Lap\tSplit\tTotal"]
-        for lap in laps:
-            absolute = self._format_stopwatch_time(lap.get("absolute_ms", 0))
-            split = self._format_stopwatch_time(lap.get("split_ms", 0))
-            label = lap.get('label', 'Lap').replace('Lap ', '')
-            lines.append(f"{label}\t{split}\t{absolute}")
-        
-        return "\n".join(lines)
-
-    def _format_stopwatch_time(self, ms: float) -> str:
-        """Format milliseconds to HH:MM:SS.cs string."""
-        if ms < 0:
-            ms = 0
-        
-        total_seconds = int(ms / 1000)
-        centiseconds = int((ms % 1000) / 10)
-        hours = total_seconds // 3600
-        minutes = (total_seconds % 3600) // 60
-        seconds = total_seconds % 60
-        
-        if hours > 0:
-            return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{centiseconds:02d}"
-        return f"{minutes:02d}:{seconds:02d}.{centiseconds:02d}"
-
     # ==================== PRESET METHODS ====================
 
     async def get_presets(self) -> list:
@@ -2316,33 +2122,6 @@ class Plugin:
                     sleep_preventing_alerts.append(alert)
                 elif user_settings.get("overlay_show_pomodoros", True):
                     alerts.append(alert)
-        
-        # Stopwatch - show first if enabled and running
-        stopwatch = await self._get_stopwatch_state()
-        if stopwatch.get("status") == "running":
-            is_preventing = stopwatch.get("prevent_sleep", False)
-            
-            laps = stopwatch.get("laps", [])
-            total_lap_count = stopwatch.get("total_lap_count", len(laps))
-            
-            # Show lap count if any laps recorded, otherwise empty label (icon only)
-            label = f"L{total_lap_count + 1}" if total_lap_count > 0 else ""
-            
-            stopwatch_alert = {
-                "id": "stopwatch",
-                "category": "stopwatch",
-                "label": label,
-                "time": stopwatch.get("start_time") or 0,
-                "remaining": int(stopwatch.get("elapsed_ms", 0) / 1000),
-                "subtle_mode": False,
-                "auto_suspend": False,
-                "prevent_sleep": is_preventing
-            }
-            
-            if is_preventing:
-                sleep_preventing_alerts.insert(0, stopwatch_alert)
-            elif user_settings.get("overlay_show_stopwatch", False):
-                alerts.insert(0, stopwatch_alert)
         
         # Combine: sleep-preventing alerts first (sorted by time), then regular alerts
         sleep_preventing_alerts.sort(key=lambda a: a["time"])
@@ -2900,12 +2679,6 @@ class Plugin:
                 "current_session": 1,
                 "end_time": None,
                 "duration": 0
-            })
-            await self.settings_setSetting(SETTINGS_KEY_STOPWATCH, {
-                "status": "idle",
-                "start_time": None,
-                "elapsed_ms": 0,
-                "laps": []
             })
             await self.settings_setSetting("missed_alerts_items", [])
             

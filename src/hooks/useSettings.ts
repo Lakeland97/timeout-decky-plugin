@@ -99,7 +99,6 @@ const DEFAULT_SETTINGS: UserSettings = {
     overlay_show_timers: true,
     overlay_show_alarms: true,
     overlay_show_pomodoros: true,
-    overlay_show_stopwatch: false,
     overlay_compact_mode: false,
     overlay_show_prevent_sleep_badge: true,
     overlay_show_missed_badge: true,
@@ -107,7 +106,7 @@ const DEFAULT_SETTINGS: UserSettings = {
     presets_enabled: true,
     presets_max_visible: 5,
     // Tab Order
-    tab_order: ["timers", "alarms", "pomodoro", "stopwatch"],
+    tab_order: ["timers", "alarms", "pomodoro"],
     // Prevent Sleep settings
     prevent_sleep_enabled: false,
     prevent_sleep_timers: true,

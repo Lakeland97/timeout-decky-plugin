@@ -12,7 +12,7 @@ import {
     ToggleField
 } from "@decky/ui";
 import { callable } from "@decky/api";
-import { FaVolumeUp, FaBell, FaClock, FaBrain, FaCoffee, FaPlay, FaPause, FaHourglassHalf, FaSave, FaFileImport, FaBullseye, FaMusic, FaTrash, FaCog, FaDatabase, FaEye, FaGamepad, FaHistory, FaBellSlash, FaStar, FaStopwatch, FaShieldAlt } from "react-icons/fa";
+import { FaVolumeUp, FaBell, FaClock, FaBrain, FaCoffee, FaPlay, FaPause, FaHourglassHalf, FaSave, FaFileImport, FaBullseye, FaMusic, FaTrash, FaCog, FaDatabase, FaEye, FaGamepad, FaHistory, FaBellSlash, FaStar, FaShieldAlt } from "react-icons/fa";
 import { useEffect, useState, useRef } from "react";
 import { useSettings } from "../hooks/useSettings";
 import { useUIComposition, UIComposition } from "../utils/uiComposition";
@@ -367,10 +367,9 @@ const TAB_LABELS: Record<string, string> = {
     "timers": "Timers",
     "alarms": "Alarms",
     "pomodoro": "Focus",
-    "stopwatch": "Stopwatch"
 };
 
-const DEFAULT_TAB_ORDER = ["timers", "alarms", "pomodoro", "stopwatch"];
+const DEFAULT_TAB_ORDER = ["timers", "alarms", "pomodoro"];
 
 // General Settings Page
 const GeneralSettingsPage = () => {
@@ -378,7 +377,7 @@ const GeneralSettingsPage = () => {
     const { importCustomSounds } = useAlarms();
     const [importStatus, setImportStatus] = useState<{ message: string; success: boolean } | null>(null);
 
-    const tabOrder = settings.tab_order && settings.tab_order.length === 5 
+    const tabOrder = settings.tab_order && settings.tab_order.length === DEFAULT_TAB_ORDER.length 
         ? settings.tab_order 
         : DEFAULT_TAB_ORDER;
 
@@ -730,7 +729,7 @@ const OverlaySettingsPage = () => {
                                             gap: 4,
                                             border: '1px dashed #4488aa'
                                         }}>
-                                            <FaStopwatch size={8} />
+                                            <FaHourglassHalf size={8} />
                                             <span>5:00</span>
                                             <span style={{ opacity: 0.4 }}>•</span>
                                             <FaBell size={8} />
@@ -856,16 +855,6 @@ const OverlaySettingsPage = () => {
                                 description="Show active timer countdowns"
                                 checked={settings.overlay_show_timers ?? true}
                                 onChange={(value) => updateSetting('overlay_show_timers', value)}
-                            />
-                        </PanelSectionRow>
-
-                        <PanelSectionRow>
-                            <ToggleField
-                                icon={<FaHistory />}
-                                label="Stopwatch"
-                                description="Show running stopwatch elapsed time. Stopwatch has priority over other alerts."
-                                checked={settings.overlay_show_stopwatch ?? true}
-                                onChange={(value) => updateSetting('overlay_show_stopwatch', value)}
                             />
                         </PanelSectionRow>
 

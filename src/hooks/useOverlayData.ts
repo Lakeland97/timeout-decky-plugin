@@ -66,37 +66,11 @@ export function useOverlayData(settings: UserSettings, isGameRunning?: boolean) 
             ));
         };
 
-        // Real-time tick updates for stopwatch (calculate elapsed exactly based on start_time)
-        const stopwatchInterval = setInterval(() => {
-            setAlerts(prev => prev.map(alert => {
-                if (alert.category === 'stopwatch') {
-                    // alert.time is used here to store the start_time timestamp (in seconds)
-                    // alert.remaining stores the base elapsed_ms (in seconds)
-                    const start_time = alert.time;
-                    if (start_time > 0) {
-                        const now = Date.now() / 1000;
-                        const runningSeconds = now - start_time;
-                        const baseRemaining = (alert as any)._base_remaining ?? alert.remaining;
-                        
-                        return { 
-                            ...alert, 
-                            _base_remaining: baseRemaining,
-                            remaining: Math.floor(baseRemaining + runningSeconds) 
-                        };
-                    }
-                }
-                return alert;
-            }));
-        }, 1000); 
-
-        const handleStopwatchUpdated = () => fetchOverlayData();
-
         addEventListener('alarme_timers_updated', handleTimersUpdated);
         addEventListener('alarme_alarms_updated', handleAlarmsUpdated);
         addEventListener('alarme_pomodoro_started', handlePomodoroStarted);
         addEventListener('alarme_pomodoro_stopped', handlePomodoroStopped);
         addEventListener('alarme_pomodoro_phase_changed', handlePomodoroPhaseChanged);
-        addEventListener('alarme_stopwatch_updated', handleStopwatchUpdated);
         addEventListener('alarme_timer_tick', handleTimerTick);
         addEventListener('alarme_pomodoro_tick', handlePomodoroTick);
 
@@ -109,11 +83,9 @@ export function useOverlayData(settings: UserSettings, isGameRunning?: boolean) 
             removeEventListener('alarme_pomodoro_started', handlePomodoroStarted);
             removeEventListener('alarme_pomodoro_stopped', handlePomodoroStopped);
             removeEventListener('alarme_pomodoro_phase_changed', handlePomodoroPhaseChanged);
-            removeEventListener('alarme_stopwatch_updated', handleStopwatchUpdated);
             removeEventListener('alarme_timer_tick', handleTimerTick);
             removeEventListener('alarme_pomodoro_tick', handlePomodoroTick);
             clearInterval(refreshInterval);
-            clearInterval(stopwatchInterval);
         };
     }, [settings.overlay_enabled, fetchOverlayData]);
 
@@ -130,7 +102,6 @@ export function useOverlayData(settings: UserSettings, isGameRunning?: boolean) 
         settings.overlay_show_timers,
         settings.overlay_show_alarms,
         settings.overlay_show_pomodoros,
-        settings.overlay_show_stopwatch,
         settings.overlay_time_window,
         settings.overlay_max_alerts,
         isGameRunning,

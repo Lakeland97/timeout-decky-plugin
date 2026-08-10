@@ -13,13 +13,12 @@ import {
     callable
 } from "@decky/api";
 import { showModal } from "@decky/ui";
-import { FaBell, FaCog, FaBrain, FaStopwatch, FaHourglassHalf, FaShieldAlt } from "react-icons/fa";
+import { FaBell, FaCog, FaBrain, FaHourglassHalf, FaShieldAlt } from "react-icons/fa";
 import { useState, useEffect, useRef, useMemo } from "react";
 
 // Components
 import { TimerPanel } from "./components/TimerPanel";
 import { AlarmPanel } from "./components/AlarmPanel";
-import { StopwatchPanel } from "./components/StopwatchPanel";
 import { PomodoroPanel } from "./components/PomodoroPanel";
 import { SettingsPage, SETTINGS_ROUTE, navigateToSettings } from "./components/SettingsModal";
 import { showSnoozeModal } from "./components/SnoozeModal";
@@ -34,7 +33,6 @@ import { formatTime } from "./utils/time";
 import { useSettings } from "./hooks/useSettings";
 import { useSleepInhibitor } from "./hooks/useSleepInhibitor";
 import { useTimers } from "./hooks/useTimers";
-import { useStopwatch } from "./hooks/useStopwatch";
 import { usePomodoro } from "./hooks/usePomodoro";
 import { useMissedAlerts } from "./hooks/useMissedAlerts";
 import { MODAL_ZINDEX_CSS } from "./utils/zIndex";
@@ -53,7 +51,7 @@ const cancelTimerCall = callable<[timer_id: string], boolean>('cancel_timer');
 const setGameRunning = callable<[is_running: boolean], void>('set_game_running');
 
 // Tab configuration
-type TabId = 'timers' | 'alarms' | 'stopwatch' | 'pomodoro';
+type TabId = 'timers' | 'alarms' | 'pomodoro';
 
 interface Tab {
     id: TabId;
@@ -65,7 +63,6 @@ const TABS: Tab[] = [
     { id: 'timers', label: 'Timers', icon: <FaHourglassHalf size={16} /> },
     { id: 'alarms', label: 'Alarms', icon: <FaBell size={16} /> },
     { id: 'pomodoro', label: 'Focus', icon: <FaBrain size={16} /> },
-    { id: 'stopwatch', label: 'Watch', icon: <FaStopwatch size={16} /> }
 ];
 
 // Tab Button Component
@@ -138,12 +135,10 @@ function Content() {
 
     // Track active items for tab indicators
     const { timers } = useTimers();
-    const { status: stopwatchStatus } = useStopwatch();
     const { state: pomodoroState } = usePomodoro();
 
     // Calculate which tabs have active items
     const hasActiveTimers = timers.some(t => !t.paused);
-    const hasActiveStopwatch = stopwatchStatus === 'running';
     const hasActivePomodoro = pomodoroState.active;
 
     // Sort tabs based on settings, or use default order
@@ -367,7 +362,6 @@ function Content() {
                         {orderedTabs.map(tab => {
                             let hasActiveItems = false;
                             if (tab.id === 'timers') hasActiveItems = hasActiveTimers;
-                            else if (tab.id === 'stopwatch') hasActiveItems = hasActiveStopwatch;
                             else if (tab.id === 'pomodoro') hasActiveItems = hasActivePomodoro;
                             
                             return (
@@ -388,7 +382,6 @@ function Content() {
             {activeTab === 'timers' && <TimerPanel />}
             {activeTab === 'alarms' && <AlarmPanel />}
             {activeTab === 'pomodoro' && <PomodoroPanel />}
-            {activeTab === 'stopwatch' && <StopwatchPanel />}
         </div>
     );
 }

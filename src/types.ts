@@ -136,7 +136,6 @@ export interface UserSettings {
     overlay_show_timers: boolean;
     overlay_show_alarms: boolean;
     overlay_show_pomodoros: boolean;
-    overlay_show_stopwatch: boolean;
     overlay_compact_mode: boolean;
     overlay_show_prevent_sleep_badge: boolean;
     overlay_show_missed_badge: boolean;
@@ -285,7 +284,7 @@ export type OverlayPosition = 'default' | 'custom';
 
 export type OverlayDisplayMode = 'both' | 'steam_only' | 'gaming_only' | 'always';
 
-export type OverlayCategory = 'timer' | 'alarm' | 'pomodoro' | 'stopwatch';
+export type OverlayCategory = 'timer' | 'alarm' | 'pomodoro';
 
 export interface OverlayAlert {
     id: string;
@@ -298,26 +297,8 @@ export interface OverlayAlert {
     prevent_sleep?: boolean;
 }
 
-// Stopwatch types
-export interface StopwatchLap {
-    label: string;
-    absolute_ms: number;
-    split_ms: number;
-}
-
-export type StopwatchStatus = 'idle' | 'running' | 'paused';
-
-export interface StopwatchState {
-    status: StopwatchStatus;
-    start_time: number | null;
-    elapsed_ms: number;
-    laps: StopwatchLap[];
-    prevent_sleep?: boolean;
-    screensaver_mode?: 'off' | 'black' | 'dim';
-}
-
 // Tab types
-export type TabId = 'timers' | 'alarms' | 'stopwatch' | 'pomodoro' | 'settings';
+export type TabId = 'timers' | 'alarms' | 'pomodoro' | 'settings';
 
 // Screensaver 2.0 types
 export type ScreensaverLayout = 'compact' | 'large' | 'fullscreen';

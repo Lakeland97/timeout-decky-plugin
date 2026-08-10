@@ -1,6 +1,6 @@
 import { ConfirmModal, showModal, Focusable } from "@decky/ui";
 import { callable } from "@decky/api";
-import { FaBell, FaStopwatch, FaBrain, FaShieldAlt } from "react-icons/fa";
+import { FaBell, FaHourglassHalf, FaBrain, FaShieldAlt } from "react-icons/fa";
 import { useUIComposition, UIComposition } from "../utils/uiComposition";
 
 const disableAllSleepInhibitors = callable<[], boolean>('disable_all_sleep_inhibitors');
@@ -25,7 +25,7 @@ function showDisableAllConfirmModal(onConfirm: () => void) {
     showModal(
         <ConfirmModal
             strTitle="Disable All Sleep Blockers"
-            strDescription="This will stop all timers, cancel the stopwatch, end the focus session, and turn off all alarms that are preventing sleep. Are you sure?"
+            strDescription="This will stop all timers, end the focus session, and turn off all alarms that are preventing sleep. Are you sure?"
             strOKButtonText="Disable All"
             strCancelButtonText="Cancel"
             onOK={onConfirm}
@@ -50,9 +50,8 @@ function SleepInhibitorModalContent({ items, closeModal }: SleepInhibitorModalPr
     const getIcon = (type: string) => {
         switch (type) {
             case 'alarm': return <FaBell />;
-            case 'timer': return <FaStopwatch />;
+            case 'timer': return <FaHourglassHalf />;
             case 'pomodoro': return <FaBrain />;
-            case 'stopwatch': return <FaStopwatch />;
             default: return <FaShieldAlt />;
         }
     };
@@ -62,7 +61,6 @@ function SleepInhibitorModalContent({ items, closeModal }: SleepInhibitorModalPr
             case 'alarm': return 'Alarm';
             case 'timer': return 'Timer';
             case 'pomodoro': return 'Focus Session';
-            case 'stopwatch': return 'Stopwatch';
             default: return type;
         }
     };
