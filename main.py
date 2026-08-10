@@ -21,29 +21,19 @@ settings = SettingsManager(name="settings", settings_directory=settingsDir)
 settings.read()
 
 # Settings keys
-SETTINGS_KEY_TIMERS = "active_timers"
 SETTINGS_KEY_ALARMS = "alarms"
 SETTINGS_KEY_PRESETS = "presets"
 SETTINGS_KEY_SETTINGS = "user_settings"
 SETTINGS_KEY_POMODORO = "pomodoro_state"
-SETTINGS_KEY_RECENT_TIMERS = "recent_timers"
 
 # Limits to prevent excessive data
-MAX_ACTIVE_TIMERS = 50
 MAX_ALARMS = 100
-MAX_RECENT_TIMERS = 20
 MAX_PRESETS = 50
 
 # Default user settings
 DEFAULT_SETTINGS = {
     "snooze_duration": 5,  # default minutes for alarm snooze
     "time_format_24h": True,
-    # Timer settings
-    "timer_sound": "alarm.mp3",
-    "timer_volume": 100,
-    "timer_subtle_mode": False,
-    "timer_auto_suspend": False,
-    "timer_prevent_sleep": False,
     # Pomodoro settings
     "pomodoro_sound": "alarm.mp3",
     "pomodoro_volume": 100,
@@ -69,7 +59,6 @@ DEFAULT_SETTINGS = {
     "overlay_opacity": 0.4,
     "overlay_max_alerts": 2,
     "overlay_time_window": 1,
-    "overlay_show_timers": True,
     "overlay_show_alarms": True,
     "overlay_show_pomodoros": True,
     "overlay_compact_mode": False,
@@ -93,8 +82,6 @@ DEFAULT_PRESETS = [
 
 
 class Plugin:
-    # Active timer tasks
-    timer_tasks: dict = {}
     alarm_check_task = None
     pomodoro_task = None
     suspend_monitor_task = None
@@ -171,16 +158,8 @@ class Plugin:
         should_inhibit = False
         reason_parts = []
         inhibiting_items = []
-        timer_count = 0
         alarm_count = 0
 
-        # Timers flagged prevent_sleep keep the Deck awake
-        timers = await self._get_timers()
-        for timer_id, timer in timers.items():
-            if not timer.get("paused", False) and timer.get("prevent_sleep", False):
-                should_inhibit = True
-                timer_count += 1
-                inhibiting_items.append({"type": "timer", "id": timer_id, "label": timer.get("label", "Timer")})
 
         # Pomodoro flagged prevent_sleep
         user_settings = await self._get_user_settings()
@@ -204,8 +183,6 @@ class Plugin:
                 alarm_count += 1
                 inhibiting_items.append({"type": "alarm", "id": alarm_id, "label": alarm.get("label", "Alarm")})
 
-        if timer_count > 0:
-            reason_parts.insert(0, f"{timer_count} timer(s)")
         if alarm_count > 0:
             reason_parts.append(f"{alarm_count} alarm(s)")
 
@@ -360,11 +337,6 @@ class Plugin:
         """Items currently flagged to prevent sleep."""
         inhibiting_items = []
 
-        timers = await self._get_timers()
-        for timer_id, timer in timers.items():
-            if (not timer.get("paused", False) and
-                    timer.get("prevent_sleep", False)):
-                inhibiting_items.append({"type": "timer", "id": timer_id, "label": timer.get("label", "Timer")})
 
         user_settings = await self._get_user_settings()
         pomodoro = await self._get_pomodoro_state()
@@ -393,11 +365,6 @@ class Plugin:
         """Disable all mechanisms preventing sleep."""
         decky.logger.info("Timeout: Disabling all sleep inhibitors")
 
-        # Cancel all timers with prevent_sleep
-        timers = await self._get_timers()
-        for timer_id, timer in list(timers.items()):
-            if timer.get("prevent_sleep", False):
-                await self.cancel_timer(timer_id)
 
         # Stop pomodoro if active
         pomodoro = await self._get_pomodoro_state()
@@ -424,304 +391,6 @@ class Plugin:
 
 
 
-
-    def _format_timer_label(self, seconds: int) -> str:
-        hours = seconds // 3600
-        minutes = (seconds % 3600) // 60
-        
-        if hours > 0 and minutes > 0:
-            return f"{hours}h {minutes} min timer"
-        elif hours > 0:
-            return f"{hours}h timer"
-        elif minutes > 0:
-            return f"{minutes} min timer"
-        else:
-            return f"{seconds}s timer"
-
-    async def create_timer(self, seconds: int, label: str = "",
-                          subtle_mode: bool = None,
-                          auto_suspend: bool = None,
-                          prevent_sleep: bool = None) -> str:
-        """Create a new countdown timer."""
-        # Check limit
-        timers = await self._get_timers()
-        if len(timers) >= MAX_ACTIVE_TIMERS:
-            decky.logger.warning(f"Timeout: Timer limit reached ({MAX_ACTIVE_TIMERS})")
-            return None
-        
-        timer_id = str(uuid.uuid4())[:8]
-        end_time = time.time() + seconds
-        user_settings = await self._get_user_settings()
-
-        if subtle_mode is None:
-            subtle_mode = user_settings.get("timer_subtle_mode", False)
-        if auto_suspend is None:
-            auto_suspend = user_settings.get("timer_auto_suspend", False)
-        if prevent_sleep is None:
-            prevent_sleep = False
-        if auto_suspend:
-            subtle_mode = True
-        
-        # Generate default label from duration if not provided
-        if not label:
-            label = self._format_timer_label(seconds)
-        
-        timer_data = {
-            "id": timer_id,
-            "label": label,
-            "seconds": seconds,
-            "end_time": end_time,
-            "created_at": time.time(),
-            "subtle_mode": subtle_mode,
-            "auto_suspend": auto_suspend,
-            "prevent_sleep": prevent_sleep,
-        }
-        
-        # Save to settings
-        timers = await self._get_timers()
-        timers[timer_id] = timer_data
-        await self._save_timers(timers)
-        
-        # Save to recent timers (for quick access)
-        await self._add_to_recent_timers(seconds, label, subtle_mode, auto_suspend, prevent_sleep)
-        
-        # Start the timer task
-        self.timer_tasks[timer_id] = self.loop.create_task(
-            self._timer_handler(timer_id, end_time, label)
-        )
-        
-        decky.logger.info(f"Timeout: Created timer {timer_id} for {seconds} seconds")
-        await decky.emit("timeout_timer_created", timer_data)
-        await self._emit_all_timers()
-        
-        # Update sleep inhibitor
-        await self._update_sleep_inhibitor()
-        
-        return timer_id
-
-    async def cancel_timer(self, timer_id: str) -> bool:
-        """Cancel an active timer."""
-        if timer_id in self.timer_tasks:
-            self.timer_tasks[timer_id].cancel()
-            del self.timer_tasks[timer_id]
-        
-        timers = await self._get_timers()
-        if timer_id in timers:
-            del timers[timer_id]
-            await self._save_timers(timers)
-            decky.logger.info(f"Timeout: Cancelled timer {timer_id}")
-            await decky.emit("timeout_timer_cancelled", timer_id)
-            await self._emit_all_timers()
-            # Update sleep inhibitor
-            await self._update_sleep_inhibitor()
-            return True
-        return False
-
-    async def pause_timer(self, timer_id: str) -> bool:
-        """Pause an active timer."""
-        timers = await self._get_timers()
-        if timer_id not in timers:
-            return False
-        
-        timer = timers[timer_id]
-        if timer.get("paused"):
-            return False  # Already paused
-        
-        # Cancel the background task
-        if timer_id in self.timer_tasks:
-            self.timer_tasks[timer_id].cancel()
-            del self.timer_tasks[timer_id]
-        
-        # Store remaining time and mark as paused
-        remaining = timer["end_time"] - time.time()
-        timer["paused"] = True
-        timer["paused_remaining"] = max(0, remaining)
-        
-        await self._save_timers(timers)
-        decky.logger.info(f"Timeout: Paused timer {timer_id} with {remaining:.0f}s remaining")
-        await decky.emit("timeout_timer_paused", {"id": timer_id, "remaining": remaining})
-        await self._emit_all_timers()
-        # Update sleep inhibitor
-        await self._update_sleep_inhibitor()
-        return True
-
-    async def resume_timer(self, timer_id: str) -> bool:
-        """Resume a paused timer."""
-        timers = await self._get_timers()
-        if timer_id not in timers:
-            return False
-        
-        timer = timers[timer_id]
-        if not timer.get("paused"):
-            return False  # Not paused
-        
-        # Calculate new end time from paused remaining
-        remaining = timer.get("paused_remaining", 0)
-        new_end_time = time.time() + remaining
-        
-        timer["end_time"] = new_end_time
-        timer["paused"] = False
-        timer.pop("paused_remaining", None)
-        
-        await self._save_timers(timers)
-        
-        # Restart the background task
-        self.timer_tasks[timer_id] = self.loop.create_task(
-            self._timer_handler(timer_id, new_end_time, timer["label"])
-        )
-        
-        decky.logger.info(f"Timeout: Resumed timer {timer_id} with {remaining:.0f}s remaining")
-        await decky.emit("timeout_timer_resumed", {"id": timer_id, "remaining": remaining})
-        await self._emit_all_timers()
-        # Update sleep inhibitor
-        await self._update_sleep_inhibitor()
-        return True
-
-    async def update_timer(self, timer_id: str, label: str = None,
-                          subtle_mode: bool = None, auto_suspend: bool = None) -> dict:
-        """Update an active timer's editable properties."""
-        timers = await self._get_timers()
-        if timer_id not in timers:
-            return None
-
-        timer = timers[timer_id]
-        if label is not None:
-            timer["label"] = label
-        if subtle_mode is not None:
-            timer["subtle_mode"] = subtle_mode
-        if auto_suspend is not None:
-            timer["auto_suspend"] = auto_suspend
-            if auto_suspend:
-                timer["subtle_mode"] = True
-
-        await self._save_timers(timers)
-        await decky.emit("timeout_timer_updated", timer)
-        await self._emit_all_timers()
-        return timer
-
-    async def get_active_timers(self) -> list:
-        """Get all active timers with remaining time."""
-        timers = await self._get_timers()
-        current_time = time.time()
-        active = []
-        
-        for timer_id, timer in timers.items():
-            # Handle paused timers
-            if timer.get("paused"):
-                active.append({
-                    **timer,
-                    "remaining": timer.get("paused_remaining", 0)
-                })
-            else:
-                remaining = timer["end_time"] - current_time
-                if remaining > 0:
-                    active.append({
-                        **timer,
-                        "remaining": remaining
-                    })
-        
-        return sorted(active, key=lambda x: x["remaining"])
-
-    async def _timer_handler(self, timer_id: str, end_time: float, label: str):
-        """Background task to handle timer countdown."""
-        try:
-            while True:
-                remaining = end_time - time.time()
-                
-                if remaining <= 0:
-                    timers = await self._get_timers()
-                    timer = timers.get(timer_id, {})
-
-                    # Timer completed
-                    await self.cancel_timer(timer_id)
-                    
-                    #  Check if missed by > 60 seconds
-                    if remaining < -60:
-                        decky.logger.info(f"Timeout: Timer {timer_id} finished {abs(remaining):.0f}s ago - counting as MISSED")
-                        await self._add_missed_item("timer", timer_id, label, end_time)
-                        return # Skip sound/notification for missed items
-
-                    user_settings = await self._get_user_settings()
-                    subtle = timer.get("subtle_mode", user_settings.get("timer_subtle_mode", False))
-                    timer_sound = user_settings.get("timer_sound", "alarm.mp3")
-                    timer_volume = user_settings.get("timer_volume", 100)
-                    timer_auto_suspend = timer.get("auto_suspend", user_settings.get("timer_auto_suspend", False))
-                    if timer_auto_suspend:
-                        subtle = True
-                    await decky.emit("timeout_timer_completed", {
-                        "id": timer_id,
-                        "label": label,
-                        "subtle": subtle,
-                        "sound": timer_sound,
-                        "volume": timer_volume,
-                        "auto_suspend": timer_auto_suspend,
-                        "time_format_24h": user_settings.get("time_format_24h", True),
-                        "snooze_activation_delay": user_settings.get("snooze_activation_delay", 2.0)
-                    })
-                    decky.logger.info(f"Timeout: Timer {timer_id} completed")
-                    return
-                
-                # Emit update every second for real-time display
-                await decky.emit("timeout_timer_tick", {
-                    "id": timer_id,
-                    "remaining": max(0, int(remaining))
-                })
-                await asyncio.sleep(1)
-                
-        except asyncio.CancelledError:
-            decky.logger.info(f"Timeout: Timer {timer_id} was cancelled")
-
-    async def _get_timers(self) -> dict:
-        return await self.settings_getSetting(SETTINGS_KEY_TIMERS, {})
-
-    async def _save_timers(self, timers: dict):
-        await self.settings_setSetting(SETTINGS_KEY_TIMERS, timers)
-        await self.settings_commit()
-
-    async def _emit_all_timers(self):
-        timers = await self.get_active_timers()
-        await decky.emit("timeout_timers_updated", timers)
-
-    async def get_recent_timers(self) -> list:
-        """Get list of recently used timers for quick access."""
-        return await self.settings_getSetting(SETTINGS_KEY_RECENT_TIMERS, [])
-
-    async def clear_recent_timers(self) -> bool:
-        """Clear the recent timers list."""
-        await self.settings_setSetting(SETTINGS_KEY_RECENT_TIMERS, [])
-        await self.settings_commit()
-        return True
-
-    async def _add_to_recent_timers(self, seconds: int, label: str, subtle_mode: bool = False, auto_suspend: bool = False, prevent_sleep: bool = False):
-        """Add a timer to the recent timers list (max 5, dedup by seconds+label+modes)."""
-        recent = await self.get_recent_timers()
-        
-        # Create new entry
-        new_entry = {
-            "seconds": seconds,
-            "label": label or f"{seconds // 60} min timer",
-            "subtle_mode": subtle_mode,
-            "auto_suspend": auto_suspend,
-            "prevent_sleep": prevent_sleep,
-        }
-        
-        # Remove duplicates (same seconds, label, subtle_mode, auto_suspend, prevent_sleep)
-        recent = [r for r in recent if not (
-            r.get("seconds") == seconds and 
-            r.get("label") == new_entry["label"] and
-            r.get("subtle_mode", False) == subtle_mode and
-            r.get("auto_suspend", False) == auto_suspend and
-            r.get("prevent_sleep", False) == prevent_sleep
-        )]
-        
-        # Add to front
-        recent.insert(0, new_entry)
-        
-        # Keep only last 5
-        recent = recent[:5]
-        
-        await self.settings_setSetting(SETTINGS_KEY_RECENT_TIMERS, recent)
-        await self.settings_commit()
 
     # ==================== ALARM METHODS ====================
 
@@ -1994,7 +1663,7 @@ class Plugin:
                 await decky.emit("timeout_presets_updated", presets)
         
         # Update sleep inhibitor if prevent_sleep settings changed
-        if any(k in new_settings for k in ("pomodoro_prevent_sleep", "timer_prevent_sleep")):
+        if any(k in new_settings for k in ("pomodoro_prevent_sleep",)):
             await self._update_sleep_inhibitor()
                 
         await self.settings_commit()
@@ -2033,26 +1702,6 @@ class Plugin:
         alerts = []
         sleep_preventing_alerts = []  # Always shown, regardless of filters
         
-        # Timers - always check for sleep-preventing ones
-        timers = await self._get_timers()
-        for timer_id, timer in timers.items():
-            remaining = int(timer["end_time"] - now)
-            if remaining > 0:
-                alert = {
-                    "id": f"timer-{timer_id}",
-                    "category": "timer",
-                    "label": timer.get("label", "Timer"),
-                    "time": timer["end_time"],
-                    "remaining": remaining,
-                    "subtle_mode": timer.get("subtle_mode", False),
-                    "auto_suspend": timer.get("auto_suspend", False),
-                    "prevent_sleep": timer.get("prevent_sleep", False)
-                }
-                # Sleep-preventing alerts always show
-                if timer.get("prevent_sleep"):
-                    sleep_preventing_alerts.append(alert)
-                elif user_settings.get("overlay_show_timers", True):
-                    alerts.append(alert)
         
         # Alarms - always check for sleep-preventing ones
         alarms = await self._get_alarms()
@@ -2142,7 +1791,6 @@ class Plugin:
             "timestamp": time.time(),
             "alarms": await self._get_alarms(),
             "presets": await self.get_presets(),
-            "recent_timers": await self.get_recent_timers(),
             "user_settings": await self._get_user_settings()
         }
         return json.dumps(data, indent=2)
@@ -2206,9 +1854,6 @@ class Plugin:
                 await self.settings_commit()
                 await decky.emit("timeout_presets_updated", data["presets"])
                 
-            if "recent_timers" in data:
-                await self.settings_setSetting(SETTINGS_KEY_RECENT_TIMERS, data["recent_timers"])
-                await self.settings_commit()
                 
             if "user_settings" in data:
                 # Merge with defaults to ensure new settings exist
@@ -2329,34 +1974,6 @@ class Plugin:
             await self.settings_setSetting(SETTINGS_KEY_SETTINGS, updated)
             await self.settings_commit()
             decky.logger.info("Timeout: Migrated overlay settings schema")
-
-    async def _migrate_timer_settings(self):
-        """Migrate legacy global timer defaults into per-timer properties."""
-        timers = await self._get_timers()
-        if not timers:
-            return
-
-        user_settings = await self._get_user_settings()
-        default_subtle = user_settings.get("timer_subtle_mode", False)
-        default_auto_suspend = user_settings.get("timer_auto_suspend", False)
-        changed = False
-
-        for timer in timers.values():
-            if "subtle_mode" not in timer:
-                timer["subtle_mode"] = default_subtle
-                changed = True
-
-            if "auto_suspend" not in timer:
-                timer["auto_suspend"] = default_auto_suspend
-                changed = True
-
-            if timer.get("auto_suspend") and not timer.get("subtle_mode"):
-                timer["subtle_mode"] = True
-                changed = True
-
-        if changed:
-            await self._save_timers(timers)
-            decky.logger.info("Timeout: Migrated timers to per-timer subtle/auto suspend settings")
 
     # ==================== CORE SETTINGS METHODS ====================
 
@@ -2582,33 +2199,11 @@ class Plugin:
     async def _main(self):
         """Plugin initialization."""
         self.loop = asyncio.get_event_loop()
-        self.timer_tasks = {}
         
         await self.settings_read()
         await self._migrate_settings_schema()
-        await self._migrate_timer_settings()
 
-        # Resume any active timers
-        timers = await self._get_timers()
         current_time = time.time()
-        timers_to_remove = []
-        
-        for timer_id, timer in timers.items():
-            remaining = timer["end_time"] - current_time
-            if remaining > 0:
-                decky.logger.info(f"Timeout: Resuming timer {timer_id} with {remaining:.0f}s remaining")
-                self.timer_tasks[timer_id] = self.loop.create_task(
-                    self._timer_handler(timer_id, timer["end_time"], timer.get("label", "Timer"))
-                )
-            else:
-                timers_to_remove.append(timer_id)
-        
-        # Clean up expired timers
-        for timer_id in timers_to_remove:
-            del timers[timer_id]
-        if timers_to_remove:
-            await self._save_timers(timers)
-        
         # Resume Pomodoro if active
         pomodoro = await self._get_pomodoro_state()
         if pomodoro.get("active") and pomodoro.get("end_time"):
@@ -2632,10 +2227,6 @@ class Plugin:
         try:
             decky.logger.info("Timeout: Starting factory reset...")
             
-            # 1. Cancel all active timer tasks
-            for timer_id, task in list(self.timer_tasks.items()):
-                task.cancel()
-            self.timer_tasks.clear()
             
             # 2. Cancel alarm checker
             if self.alarm_check_task:
@@ -2656,9 +2247,7 @@ class Plugin:
             await self.settings_setSetting(SETTINGS_KEY_SETTINGS, DEFAULT_SETTINGS)
             
             # 6. Clear all data keys
-            await self.settings_setSetting(SETTINGS_KEY_TIMERS, {})
             await self.settings_setSetting(SETTINGS_KEY_ALARMS, {})
-            await self.settings_setSetting(SETTINGS_KEY_RECENT_TIMERS, [])
             await self.settings_setSetting(SETTINGS_KEY_POMODORO, {
                 "active": False,
                 "is_break": False,
@@ -2690,7 +2279,6 @@ class Plugin:
             # 9. Emit update events to frontend
             await decky.emit("timeout_settings_updated", DEFAULT_SETTINGS)
             await decky.emit("timeout_alarms_updated", [])
-            await decky.emit("timeout_timers_updated", [])
             await decky.emit("timeout_pomodoro_updated", {
                 "active": False,
                 "is_break": False,
@@ -2713,10 +2301,6 @@ class Plugin:
 
     async def _unload(self):
         """Plugin unload cleanup."""
-        # Cancel all timer tasks
-        for timer_id, task in self.timer_tasks.items():
-            task.cancel()
-        self.timer_tasks.clear()
         
         # Cancel alarm checker
         if self.alarm_check_task:
