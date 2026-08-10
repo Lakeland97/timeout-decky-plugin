@@ -128,6 +128,7 @@ BSD-3-Clause — see [LICENSE](LICENSE).
 ## Credits
 
 - **Author**: Lakeland97
+- **Based on**: [AlarMe](https://github.com/lemossilva/alarme-decky-plugin) by Guilherme Lemos
 - **Framework**: [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader)
 - **Icons**: [React Icons](https://react-icons.github.io/react-icons/)
 
