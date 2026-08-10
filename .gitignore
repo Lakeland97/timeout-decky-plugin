@@ -41,5 +41,6 @@ logs/
 .cache/
 
 # Docs
-docs/
+docs/*
+!docs/superpowers/
 CHANGELOG.md
