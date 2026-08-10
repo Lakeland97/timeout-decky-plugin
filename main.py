@@ -42,6 +42,8 @@ DEFAULT_SETTINGS = {
     "missed_alerts_enabled": True,
     "missed_alerts_window": 24,
     "pomodoro_suspend_behavior": "continue",
+    # Alert interaction delay (seconds before gaming popups accept input)
+    "snooze_activation_delay": 2.0,
     # Overlay settings
     "overlay_enabled": False,
     "overlay_display_mode": "both",
