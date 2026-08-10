@@ -41,5 +41,9 @@ logs/
 .cache/
 
 # Docs
-docs/
+docs/*
+!docs/superpowers/
 CHANGELOG.md
+
+# Agent scratch (superpowers working area)
+.superpowers/

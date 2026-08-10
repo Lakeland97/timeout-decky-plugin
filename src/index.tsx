@@ -13,36 +13,28 @@ import {
     callable
 } from "@decky/api";
 import { showModal } from "@decky/ui";
-import { FaBell, FaCog, FaBrain, FaStopwatch, FaHourglassHalf, FaRedo, FaShieldAlt, FaMoon } from "react-icons/fa";
+import { FaBell, FaCog, FaBrain, FaHourglassHalf, FaShieldAlt } from "react-icons/fa";
 import { useState, useEffect, useRef, useMemo } from "react";
 
 // Components
 import { TimerPanel } from "./components/TimerPanel";
 import { AlarmPanel } from "./components/AlarmPanel";
-import { StopwatchPanel } from "./components/StopwatchPanel";
 import { PomodoroPanel } from "./components/PomodoroPanel";
-import { ReminderPanel } from "./components/ReminderPanel";
 import { SettingsPage, SETTINGS_ROUTE, navigateToSettings } from "./components/SettingsModal";
 import { showSnoozeModal } from "./components/SnoozeModal";
 import { PomodoroNotification } from "./components/PomodoroNotification";
-import { ReminderNotification } from "./components/ReminderNotification";
 import { GameOverlay } from "./components/GameOverlay";
 import showMissedReportModal from "./components/MissedReportModal";
 import { showSleepInhibitorModal } from "./components/SleepInhibitorModal";
-import { ScreensaverOverlay } from "./components/ScreensaverOverlay";
-import { AlarMeUIComposition } from "./components/AlarMeUIComposition";
+import { TimeoutUIComposition } from "./components/TimeoutUIComposition";
 import { playAlarmSound } from "./utils/sounds";
 import { SteamUtils } from "./utils/steam";
 import { formatTime } from "./utils/time";
 import { useSettings } from "./hooks/useSettings";
 import { useSleepInhibitor } from "./hooks/useSleepInhibitor";
 import { useTimers } from "./hooks/useTimers";
-import { useStopwatch } from "./hooks/useStopwatch";
 import { usePomodoro } from "./hooks/usePomodoro";
-import { useReminders } from "./hooks/useReminders";
-import { useGameStatus } from "./hooks/useGameStatus";
 import { useMissedAlerts } from "./hooks/useMissedAlerts";
-import { triggerScreensaverPreviewAfterClosingMenus } from "./hooks/useScreensaver";
 import { MODAL_ZINDEX_CSS } from "./utils/zIndex";
 
 // Types
@@ -50,7 +42,6 @@ import type {
     TimerCompletedEvent,
     AlarmTriggeredEvent,
     PomodoroState,
-    ReminderTriggeredEvent
 } from "./types";
 
 // Backend callables
@@ -58,10 +49,9 @@ const snoozeAlarm = callable<[alarm_id: string, minutes: number], boolean>('snoo
 const snoozeTimerCall = callable<[timer_id: string, minutes: number], boolean>('snooze_timer');
 const cancelTimerCall = callable<[timer_id: string], boolean>('cancel_timer');
 const setGameRunning = callable<[is_running: boolean], void>('set_game_running');
-const toggleReminder = callable<[reminder_id: string, enabled: boolean], boolean>('toggle_reminder');
 
 // Tab configuration
-type TabId = 'timers' | 'alarms' | 'stopwatch' | 'pomodoro' | 'reminders';
+type TabId = 'timers' | 'alarms' | 'pomodoro';
 
 interface Tab {
     id: TabId;
@@ -73,8 +63,6 @@ const TABS: Tab[] = [
     { id: 'timers', label: 'Timers', icon: <FaHourglassHalf size={16} /> },
     { id: 'alarms', label: 'Alarms', icon: <FaBell size={16} /> },
     { id: 'pomodoro', label: 'Focus', icon: <FaBrain size={16} /> },
-    { id: 'reminders', label: 'Remind', icon: <FaRedo size={16} /> },
-    { id: 'stopwatch', label: 'Watch', icon: <FaStopwatch size={16} /> }
 ];
 
 // Tab Button Component
@@ -147,18 +135,11 @@ function Content() {
 
     // Track active items for tab indicators
     const { timers } = useTimers();
-    const { status: stopwatchStatus } = useStopwatch();
     const { state: pomodoroState } = usePomodoro();
-    const { reminders } = useReminders();
-    const isGameRunning = useGameStatus();
 
     // Calculate which tabs have active items
     const hasActiveTimers = timers.some(t => !t.paused);
-    const hasActiveStopwatch = stopwatchStatus === 'running';
     const hasActivePomodoro = pomodoroState.active;
-    const hasActiveReminders = reminders.some(r => 
-        r.enabled && (!r.only_while_gaming || isGameRunning)
-    );
 
     // Sort tabs based on settings, or use default order
     const orderedTabs = useMemo(() => {
@@ -219,7 +200,6 @@ function Content() {
         markAsSeen();
         showMissedReportModal(missedItems, use24h);
     };
-    const screensaverEnabled = (userSettings.screensaver_mode || 'off') !== 'off';
 
     return (
         <div ref={contentRef}>
@@ -293,7 +273,7 @@ function Content() {
 
                     {/* Sleep Inhibitor Button */}
                     <Focusable
-                        onActivate={(sleepInhibitorActive && screensaverEnabled) ? () => showSleepInhibitorModal(sleepInhibitorItems) : undefined}
+                        onActivate={sleepInhibitorActive ? () => showSleepInhibitorModal(sleepInhibitorItems) : undefined}
                         style={{
                             flex: '1 1 0',
                             minWidth: 0,
@@ -302,28 +282,28 @@ function Content() {
                             justifyContent: 'center',
                             gap: 6,
                             padding: 8,
-                            backgroundColor: (sleepInhibitorActive && screensaverEnabled) ? '#e6990022' : '#ffffff08',
+                            backgroundColor: sleepInhibitorActive ? '#e6990022' : '#ffffff08',
                             borderRadius: 12,
                             border: '2px solid transparent',
-                            cursor: (sleepInhibitorActive && screensaverEnabled) ? 'pointer' : 'default',
-                            opacity: (sleepInhibitorActive && screensaverEnabled) ? 1 : 0.6,
+                            cursor: sleepInhibitorActive ? 'pointer' : 'default',
+                            opacity: sleepInhibitorActive ? 1 : 0.6,
                             transition: 'all 0.1s ease-in-out'
                         }}
                         onFocus={(e: any) => {
-                            if (sleepInhibitorActive && screensaverEnabled) {
+                            if (sleepInhibitorActive) {
                                 e.target.style.backgroundColor = '#4488aa';
                                 e.target.style.borderColor = 'white';
                             }
                         }}
                         onBlur={(e: any) => {
-                            e.target.style.backgroundColor = (sleepInhibitorActive && screensaverEnabled) ? '#e6990022' : '#ffffff08';
+                            e.target.style.backgroundColor = sleepInhibitorActive ? '#e6990022' : '#ffffff08';
                             e.target.style.borderColor = 'transparent';
                         }}
                     >
-                        <FaShieldAlt size={14} style={{ color: (sleepInhibitorActive && screensaverEnabled) ? '#e69900' : '#666666' }} />
+                        <FaShieldAlt size={14} style={{ color: sleepInhibitorActive ? '#e69900' : '#666666' }} />
                         <span style={{
                             fontSize: 12,
-                            color: (sleepInhibitorActive && screensaverEnabled) ? '#e69900' : '#666666',
+                            color: sleepInhibitorActive ? '#e69900' : '#666666',
                             fontWeight: 500,
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
@@ -332,42 +312,6 @@ function Content() {
                             {sleepInhibitorActive ? 'Awake' : 'Sleep'}
                         </span>
                     </Focusable>
-
-                    {/* Screensaver Preview Button */}
-                    {(() => {
-                        const screensaverMode = userSettings.screensaver_mode || 'off';
-                        if (screensaverMode === 'off') return null;
-                        return (
-                            <Focusable
-                                onActivate={() => triggerScreensaverPreviewAfterClosingMenus()}
-                                style={{
-                                    flex: '0 0 auto',
-                                    padding: 8,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    backgroundColor: '#ffffff08',
-                                    borderRadius: 12,
-                                    border: '2px solid transparent',
-                                    cursor: 'pointer',
-                                    color: '#888888',
-                                    transition: 'all 0.1s ease-in-out'
-                                }}
-                                onFocus={(e: any) => {
-                                    e.target.style.backgroundColor = '#4488aa';
-                                    e.target.style.borderColor = 'white';
-                                    e.target.style.color = 'white';
-                                }}
-                                onBlur={(e: any) => {
-                                    e.target.style.backgroundColor = '#ffffff08';
-                                    e.target.style.borderColor = 'transparent';
-                                    e.target.style.color = '#888888';
-                                }}
-                            >
-                                <FaMoon size={16} />
-                            </Focusable>
-                        );
-                    })()}
 
                     {/* Settings Button */}
                     <Focusable
@@ -418,9 +362,7 @@ function Content() {
                         {orderedTabs.map(tab => {
                             let hasActiveItems = false;
                             if (tab.id === 'timers') hasActiveItems = hasActiveTimers;
-                            else if (tab.id === 'stopwatch') hasActiveItems = hasActiveStopwatch;
                             else if (tab.id === 'pomodoro') hasActiveItems = hasActivePomodoro;
-                            else if (tab.id === 'reminders') hasActiveItems = hasActiveReminders;
                             
                             return (
                                 <TabButton
@@ -440,8 +382,6 @@ function Content() {
             {activeTab === 'timers' && <TimerPanel />}
             {activeTab === 'alarms' && <AlarmPanel />}
             {activeTab === 'pomodoro' && <PomodoroPanel />}
-            {activeTab === 'reminders' && <ReminderPanel />}
-            {activeTab === 'stopwatch' && <StopwatchPanel />}
         </div>
     );
 }
@@ -547,40 +487,16 @@ export default definePlugin(() => {
         }
     };
 
-    const handleReminderTriggered = (event: ReminderTriggeredEvent) => {
-        const use24h = event.time_format_24h ?? true;
-        // Use subtle_mode from the event
-        if (event.subtle_mode) {
-            toaster.toast({
-                title: "⏰ Reminder",
-                body: `${event.reminder.label || "Time for a break!"} • ${getTimeStr(use24h)}`
-            });
-        } else {
-            // Non-subtle: Show Modal
-            // Pass sound details to modal so it plays sound
-            showModal(
-                <ReminderNotification
-                    reminder={event.reminder}
-                    onDisable={() => toggleReminder(event.reminder.id, false)}
-                    sound={event.sound || 'alarm.mp3'}
-                    volume={event.volume}
-                    use24h={use24h}
-                />
-            );
-        }
-    };
-
     // Register event listeners
-    addEventListener('alarme_timer_completed', handleTimerCompleted);
-    addEventListener('alarme_alarm_triggered', handleAlarmTriggered);
-    addEventListener('alarme_pomodoro_work_ended', handlePomodoroWorkEnded);
-    addEventListener('alarme_pomodoro_break_ended', handlePomodoroBreakEnded);
-    addEventListener('alarme_reminder_triggered', handleReminderTriggered);
+    addEventListener('timeout_timer_completed', handleTimerCompleted);
+    addEventListener('timeout_alarm_triggered', handleAlarmTriggered);
+    addEventListener('timeout_pomodoro_work_ended', handlePomodoroWorkEnded);
+    addEventListener('timeout_pomodoro_break_ended', handlePomodoroBreakEnded);
 
     // Missed items toast
-    addEventListener('alarme_missed_items_toast', (count: number) => {
+    addEventListener('timeout_missed_items_toast', (count: number) => {
         toaster.toast({
-            title: "AlarMe",
+            title: "Timeout",
             body: `You missed ${count} alert${count !== 1 ? 's' : ''} while away.`
         });
     });
@@ -602,22 +518,22 @@ export default definePlugin(() => {
                     // Game start
                     runningAppIds.add(appId);
                     setGameRunning(true);
-                    console.log(`[AlarMe] App ${appId} started. Running apps: ${runningAppIds.size}`);
+                    console.log(`[Timeout] App ${appId} started. Running apps: ${runningAppIds.size}`);
                 } else {
                     // Game end
                     runningAppIds.delete(appId);
                     const isAnyGameRunning = runningAppIds.size > 0;
                     setGameRunning(isAnyGameRunning);
-                    console.log(`[AlarMe] App ${appId} ended. Running apps: ${runningAppIds.size}`);
+                    console.log(`[Timeout] App ${appId} ended. Running apps: ${runningAppIds.size}`);
                 }
             });
         }
     } catch (e) {
-        console.error("AlarMe: Failed to register game listeners", e);
+        console.error("Timeout: Failed to register game listeners", e);
     }
 
-    // Inject CSS so modal portals always render above the screensaver overlay.
-    const modalStyleId = 'alarme-modal-zindex-fix';
+    // Inject CSS so modal portals always render at a controlled z-index.
+    const modalStyleId = 'timeout-modal-zindex-fix';
     if (!document.getElementById(modalStyleId)) {
         const style = document.createElement('style');
         style.id = modalStyleId;
@@ -630,22 +546,18 @@ export default definePlugin(() => {
 
     // Register in-game overlay using Decky's global component system
     // This API injects components into both Steam UI and game overlay
-    const OVERLAY_COMPONENT_NAME = 'AlarMeGameOverlay';
+    const OVERLAY_COMPONENT_NAME = 'TimeoutGameOverlay';
     routerHook.addGlobalComponent(OVERLAY_COMPONENT_NAME, GameOverlay);
 
-    // Register screensaver overlay
-    const SCREENSAVER_COMPONENT_NAME = 'AlarMeScreensaverOverlay';
-    routerHook.addGlobalComponent(SCREENSAVER_COMPONENT_NAME, () => <ScreensaverOverlay />);
-
-    const COMPOSITION_COMPONENT_NAME = 'AlarMeUIComposition';
-    routerHook.addGlobalComponent(COMPOSITION_COMPONENT_NAME, AlarMeUIComposition);
+    const COMPOSITION_COMPONENT_NAME = 'TimeoutUIComposition';
+    routerHook.addGlobalComponent(COMPOSITION_COMPONENT_NAME, TimeoutUIComposition);
 
     return {
-        name: "AlarMe",
+        name: "Timeout",
         titleView: (
             <div className={staticClasses.Title}>
                 <FaHourglassHalf style={{ marginRight: 8 }} />
-                AlarMe
+                Timeout
             </div>
         ),
         content: <Content />,
@@ -653,15 +565,13 @@ export default definePlugin(() => {
         alwaysRender: true, // Keep plugin state active for overlay visibility
 
         onDismount: () => {
-            removeEventListener('alarme_timer_completed', handleTimerCompleted);
-            removeEventListener('alarme_alarm_triggered', handleAlarmTriggered);
-            removeEventListener('alarme_pomodoro_work_ended', handlePomodoroWorkEnded);
-            removeEventListener('alarme_pomodoro_break_ended', handlePomodoroBreakEnded);
-            removeEventListener('alarme_reminder_triggered', handleReminderTriggered);
+            removeEventListener('timeout_timer_completed', handleTimerCompleted);
+            removeEventListener('timeout_alarm_triggered', handleAlarmTriggered);
+            removeEventListener('timeout_pomodoro_work_ended', handlePomodoroWorkEnded);
+            removeEventListener('timeout_pomodoro_break_ended', handlePomodoroBreakEnded);
             // Unregister settings route and overlay
             routerHook.removeRoute(SETTINGS_ROUTE);
             routerHook.removeGlobalComponent(OVERLAY_COMPONENT_NAME);
-            routerHook.removeGlobalComponent(SCREENSAVER_COMPONENT_NAME);
             routerHook.removeGlobalComponent(COMPOSITION_COMPONENT_NAME);
             if (unregisterGameListener) {
                 if (typeof unregisterGameListener === 'function') {

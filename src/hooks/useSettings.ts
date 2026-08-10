@@ -33,57 +33,11 @@ const DEFAULT_SETTINGS: UserSettings = {
     // Missed Alerts settings
     missed_alerts_enabled: true,
     missed_alerts_window: 24,
-    // Screensaver settings
-    screensaver_mode: 'dim' as 'off' | 'black' | 'dim' | 'wallpaper',
-    screensaver_dim_opacity: 0.92,
-    pomodoro_screensaver_mode: 'off' as 'off' | 'black' | 'dim',
-    screensaver_idle_seconds: 15,
-    overlay_during_screensaver: true,
-    overlay_screensaver_show_clock: true,
-    overlay_screensaver_show_date: true,
-    overlay_screensaver_show_battery: true,
-    // Screensaver 2.0 settings
-    screensaver_standalone_enabled: false,
-    screensaver_standalone_idle_seconds: 60,
-    overlay_screensaver_layout: 'compact' as const,
-    screensaver_clock_style: 'digital' as const,
-    screensaver_clock_size: 20,
-    screensaver_accent_color: 'muted_gray' as const,
-    screensaver_show_day_of_week: true,
-    screensaver_show_year: false,
-    screensaver_show_calendar_grid: false,
-    screensaver_battery_show_bar: false,
-    screensaver_battery_low_threshold: 20,
-    screensaver_show_alerts_list: true,
-    screensaver_show_system_stats: false,
-    screensaver_show_network_info: false,
-    screensaver_show_weather: false,
-    screensaver_weather_lat: null,
-    screensaver_weather_lon: null,
-    screensaver_weather_city_name: null,
-    screensaver_weather_unit: 'C' as const,
-    screensaver_weather_show_highlow: true,
-    screensaver_weather_show_condition: true,
-    screensaver_weather_refresh_minutes: 30,
-    screensaver_weather_location_source: null,
-    screensaver_nasa_api_key: '',
-    screensaver_wallpaper_show_attribution: true,
-    screensaver_wallpaper_provider: 'picsum' as const,
-    screensaver_wallpaper_fit: 'cover' as const,
-    screensaver_wallpaper_blur: 'none' as const,
-    screensaver_wallpaper_dim: 0.4,
-    screensaver_wallpaper_interval: 300,
-    screensaver_wallpaper_pool_size: 5,
-    screensaver_wallpaper_auto_rotate: true,
-    screensaver_wallpaper_cache_updated_at: null,
-    screensaver_wallpaper_shift_local: false,
-    screensaver_floating_drift_range: 40,
     // Pixel shift for OLED burn-in prevention
     pixel_shift_enabled: true,
     pixel_shift_range: 3,
     pixel_shift_interval_seconds: 60,
     // Suspend Behavior
-    reminder_suspend_behavior: 'continue', // 'continue' = missed alerts, 'pause' = shift schedule
     pomodoro_suspend_behavior: 'continue', // 'continue' = missed session, 'pause' = shift session
     // Display settings
     snooze_activation_delay: 2.0,
@@ -100,8 +54,6 @@ const DEFAULT_SETTINGS: UserSettings = {
     overlay_show_timers: true,
     overlay_show_alarms: true,
     overlay_show_pomodoros: true,
-    overlay_show_reminders: true,
-    overlay_show_stopwatch: false,
     overlay_compact_mode: false,
     overlay_show_prevent_sleep_badge: true,
     overlay_show_missed_badge: true,
@@ -109,14 +61,13 @@ const DEFAULT_SETTINGS: UserSettings = {
     presets_enabled: true,
     presets_max_visible: 5,
     // Tab Order
-    tab_order: ["timers", "alarms", "pomodoro", "reminders", "stopwatch"],
+    tab_order: ["timers", "alarms", "pomodoro"],
     // Prevent Sleep settings
     prevent_sleep_enabled: false,
     prevent_sleep_timers: true,
     prevent_sleep_pomodoro: true,
     prevent_sleep_alarms: false,
     prevent_sleep_alarms_window: 60,  // default 1 hour
-    prevent_sleep_reminders: false
 };
 
 export function useSettings() {
@@ -205,15 +156,15 @@ export function useSettings() {
             setPresets(updatedPresets);
         };
 
-        addEventListener('alarme_settings_updated', handleSettingsUpdated);
-        addEventListener('alarme_presets_updated', handlePresetsUpdated);
+        addEventListener('timeout_settings_updated', handleSettingsUpdated);
+        addEventListener('timeout_presets_updated', handlePresetsUpdated);
 
         // Load initial data
         loadData();
 
         return () => {
-            removeEventListener('alarme_settings_updated', handleSettingsUpdated);
-            removeEventListener('alarme_presets_updated', handlePresetsUpdated);
+            removeEventListener('timeout_settings_updated', handleSettingsUpdated);
+            removeEventListener('timeout_presets_updated', handlePresetsUpdated);
         };
     }, [loadData]);
 

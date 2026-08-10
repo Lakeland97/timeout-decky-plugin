@@ -80,7 +80,7 @@ export const PomodoroNotification = ({ closeModal, sound, volume }: { closeModal
             try {
                 const result = await getSoundDataCall(soundFile);
                 if (!result.success || !result.data || !result.mime_type) {
-                    console.error('[Alarme] PomodoroNotification: Failed to load custom sound:', result.error);
+                    console.error('[Timeout] PomodoroNotification: Failed to load custom sound:', result.error);
                     return;
                 }
 
@@ -92,9 +92,9 @@ export const PomodoroNotification = ({ closeModal, sound, volume }: { closeModal
                 audio.loop = true; // Keep playing until dismissed
                 await audio.play();
                 audioRef.current = audio;
-                console.log('[Alarme] PomodoroNotification: Custom sound playing');
+                console.log('[Timeout] PomodoroNotification: Custom sound playing');
             } catch (e) {
-                console.error('[Alarme] PomodoroNotification: Failed to play custom sound:', e);
+                console.error('[Timeout] PomodoroNotification: Failed to play custom sound:', e);
             }
         };
 

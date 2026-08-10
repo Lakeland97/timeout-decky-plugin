@@ -1,7 +1,7 @@
 {
-    "name": "AlarMe",
-    "author": "Guilherme Lemos",
-    "version": "1.7.5",
+    "name": "Timeout",
+    "author": "Lakeland97",
+    "version": "0.1.0",
     "main": "main.py",
     "flags": [],
     "api_version": 1,
@@ -12,9 +12,11 @@
             "productivity",
             "pomodoro",
             "clock",
-            "snooze"
+            "limits",
+            "focus",
+            "parental"
         ],
-        "description": "Advanced alarm and timer with snooze, recurring alarms, Pomodoro mode, and persistent notifications.",
-        "image": "https://raw.githubusercontent.com/lemossilva/alarme-decky-plugin/main/assets/promo.png"
+        "description": "Play-time budgets, focus with teeth, and optional parental lockout for Steam Deck.",
+        "image": "https://raw.githubusercontent.com/Lakeland97/timeout-decky-plugin/main/assets/promo.png"
     }
 }

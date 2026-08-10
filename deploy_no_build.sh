@@ -1,16 +1,16 @@
 #!/bin/bash
-# Deploy script for AlarMe Decky Plugin (no local build step)
+# Deploy script for Timeout Decky Plugin (no local build step)
 # Usage: ./deploy_no_build.sh [DECK_IP]
 
-PLUGIN_NAME="alarme-decky-plugin"
+PLUGIN_NAME="timeout-decky-plugin"
 DECK_USER="deck"
 DECK_IP="${1:-${DECK_IP:-192.168.1.100}}"
 PLUGIN_PATH="/home/deck/homebrew/plugins/${PLUGIN_NAME}"
 TMP_PATH="/home/deck/tmp/${PLUGIN_NAME}"
 
-SSH_OPTS="-o ControlMaster=auto -o ControlPath=/tmp/ssh_alarme_%h -o ControlPersist=60"
+SSH_OPTS="-o ControlMaster=auto -o ControlPath=/tmp/ssh_timeout_%h -o ControlPersist=60"
 
-echo "=== AlarMe Deployment Script (no build) ==="
+echo "=== Timeout Deployment Script (no build) ==="
 echo "Target: ${DECK_USER}@${DECK_IP}"
 echo ""
 
@@ -43,7 +43,7 @@ fi
 echo "Restarting Decky Loader..."
 ssh $SSH_OPTS -t ${DECK_USER}@${DECK_IP} "sudo systemctl restart plugin_loader"
 
-ssh -O exit -o ControlPath=/tmp/ssh_alarme_%h ${DECK_USER}@${DECK_IP} 2>/dev/null
+ssh -O exit -o ControlPath=/tmp/ssh_timeout_%h ${DECK_USER}@${DECK_IP} 2>/dev/null
 
 echo ""
-echo "AlarMe deployment complete."
+echo "Timeout deployment complete."

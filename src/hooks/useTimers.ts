@@ -3,7 +3,7 @@ import { addEventListener, removeEventListener, callable } from '@decky/api';
 import type { Timer, TimerTickEvent } from '../types';
 
 // Backend callables
-const createTimerCall = callable<[seconds: number, label: string, subtle_mode?: boolean, auto_suspend?: boolean, prevent_sleep?: boolean, screensaver_mode?: string], string>('create_timer');
+const createTimerCall = callable<[seconds: number, label: string, subtle_mode?: boolean, auto_suspend?: boolean, prevent_sleep?: boolean], string>('create_timer');
 const cancelTimerCall = callable<[timer_id: string], boolean>('cancel_timer');
 const pauseTimerCall = callable<[timer_id: string], boolean>('pause_timer');
 const resumeTimerCall = callable<[timer_id: string], boolean>('resume_timer');
@@ -17,7 +17,6 @@ export interface RecentTimer {
     subtle_mode?: boolean;
     auto_suspend?: boolean;
     prevent_sleep?: boolean;
-    screensaver_mode?: string;
 }
 
 export function useTimers() {
@@ -53,11 +52,10 @@ export function useTimers() {
         label: string = '',
         subtleMode?: boolean,
         autoSuspend?: boolean,
-        preventSleep?: boolean,
-        screensaverMode?: string
+        preventSleep?: boolean
     ) => {
         try {
-            await createTimerCall(seconds, label, subtleMode, autoSuspend, preventSleep, screensaverMode);
+            await createTimerCall(seconds, label, subtleMode, autoSuspend, preventSleep);
             // Reload recent timers after creating
             loadRecentTimers();
         } catch (e) {
@@ -106,16 +104,16 @@ export function useTimers() {
             ));
         };
 
-        addEventListener('alarme_timers_updated', handleTimersUpdated);
-        addEventListener('alarme_timer_tick', handleTimerTick);
+        addEventListener('timeout_timers_updated', handleTimersUpdated);
+        addEventListener('timeout_timer_tick', handleTimerTick);
 
         // Load initial data
         loadTimers();
         loadRecentTimers();
 
         return () => {
-            removeEventListener('alarme_timers_updated', handleTimersUpdated);
-            removeEventListener('alarme_timer_tick', handleTimerTick);
+            removeEventListener('timeout_timers_updated', handleTimersUpdated);
+            removeEventListener('timeout_timer_tick', handleTimerTick);
         };
     }, [loadTimers, loadRecentTimers]);
 

@@ -175,7 +175,7 @@ const TimerItem = ({ timer, onCancel, onPause, onResume, onSaveAsPreset, showSav
                 </Focusable>
             </div>
             
-            {(timer.subtle_mode || timer.auto_suspend || timer.prevent_sleep || (timer.screensaver_mode && timer.screensaver_mode !== 'off')) && (
+            {(timer.subtle_mode || timer.auto_suspend || timer.prevent_sleep) && (
                 <div style={{
                     fontSize: 11,
                     color: '#bbbbbb',
@@ -187,7 +187,6 @@ const TimerItem = ({ timer, onCancel, onPause, onResume, onSaveAsPreset, showSav
                     {timer.prevent_sleep && <span style={{ color: '#e69900' }}>🛡️ Prev. Sleep</span>}
                     {timer.auto_suspend && <span>💤 Auto-Suspend</span>}
                     {timer.subtle_mode && !timer.auto_suspend && <span>📵 Subtle</span>}
-                    {timer.screensaver_mode && timer.screensaver_mode !== 'off' && <span style={{ color: '#8888aa' }}>🌙 Screensaver</span>}
                 </div>
             )}
         </div>
@@ -271,7 +270,6 @@ const PresetButton = ({ preset, onClick, onDelete, disabled }: PresetButtonProps
                     {preset.auto_suspend && <span style={{ fontSize: 12, color: focused ? '#ddaadd' : '#aa88aa' }}>💤</span>}
                     {preset.subtle_mode && !preset.auto_suspend && <span style={{ fontSize: 12, color: focused ? '#aaddaa' : '#88aa88' }}>📵</span>}
                     {preset.prevent_sleep && <span style={{ fontSize: 12, color: focused ? '#ffcc66' : '#e69900' }}>🛡️</span>}
-                    {preset.screensaver_mode && preset.screensaver_mode !== 'off' && <span style={{ fontSize: 12, color: focused ? '#bbbbdd' : '#8888aa' }}>🌙</span>}
                     <span style={{ color: focused ? '#ffffff' : '#888888', fontSize: 12, marginLeft: 2, minWidth: 35, textAlign: 'right' }}>
                         {minutes}m
                     </span>
@@ -334,7 +332,6 @@ const RecentTimerButton = ({ recent, onClick, isFirst }: { recent: RecentTimer; 
                 {recent.auto_suspend && <span style={{ fontSize: 12, color: focused ? '#ddaadd' : '#aa88aa' }}>💤</span>}
                 {recent.subtle_mode && !recent.auto_suspend && <span style={{ fontSize: 12, color: focused ? '#aaddaa' : '#88aa88' }}>📵</span>}
                 {recent.prevent_sleep && <span style={{ fontSize: 12, color: focused ? '#ffcc66' : '#e69900' }}>🛡️</span>}
-                {recent.screensaver_mode && recent.screensaver_mode !== 'off' && <span style={{ fontSize: 12, color: focused ? '#bbbbdd' : '#8888aa' }}>🌙</span>}
                 <span style={{ color: focused ? '#ffffff' : '#888888', fontSize: 12, marginLeft: 2 }}>{minutes}m</span>
             </div>
         </Focusable>
@@ -350,14 +347,13 @@ export function TimerPanel() {
     const timerSubtleMode = settings.timer_subtle_mode ?? false;
     const timerAutoSuspend = settings.timer_auto_suspend ?? false;
     const timerPreventSleep = settings.timer_prevent_sleep ?? false;
-    const [timerScreensaver, setTimerScreensaver] = useState(true);
 
     const hasActiveTimers = timers.length > 0;
     const hasRecentTimers = recentTimers.length > 0;
 
     // Quick start timer (no label)
     const handleQuickStart = async () => {
-        await createTimer(timerMinutes * 60, '', timerSubtleMode, timerAutoSuspend, timerPreventSleep, timerScreensaver ? 'black' : 'off');
+        await createTimer(timerMinutes * 60, '', timerSubtleMode, timerAutoSuspend, timerPreventSleep);
     };
 
     // Open modal for labeled timer
@@ -365,7 +361,7 @@ export function TimerPanel() {
         showTimerLabelModal({
             seconds: timerMinutes * 60,
             onStart: async (seconds, label) => {
-                await createTimer(seconds, label, timerSubtleMode, timerAutoSuspend, timerPreventSleep, timerScreensaver ? 'black' : 'off');
+                await createTimer(seconds, label, timerSubtleMode, timerAutoSuspend, timerPreventSleep);
             }
         });
     };
@@ -375,8 +371,7 @@ export function TimerPanel() {
         const subtleMode = preset.subtle_mode !== undefined ? preset.subtle_mode : timerSubtleMode;
         const autoSuspend = preset.auto_suspend !== undefined ? preset.auto_suspend : timerAutoSuspend;
         const preventSleep = preset.prevent_sleep !== undefined ? preset.prevent_sleep : timerPreventSleep;
-        const screensaverMode = preset.screensaver_mode !== undefined ? preset.screensaver_mode : (settings.screensaver_mode ?? 'off');
-        await createTimer(preset.seconds, preset.label, subtleMode, autoSuspend, preventSleep, screensaverMode);
+        await createTimer(preset.seconds, preset.label, subtleMode, autoSuspend, preventSleep);
     };
 
     // Start from recent
@@ -385,8 +380,7 @@ export function TimerPanel() {
         const subtleMode = recent.subtle_mode !== undefined ? recent.subtle_mode : timerSubtleMode;
         const autoSuspend = recent.auto_suspend !== undefined ? recent.auto_suspend : timerAutoSuspend;
         const preventSleep = recent.prevent_sleep !== undefined ? recent.prevent_sleep : timerPreventSleep;
-        const screensaverMode = recent.screensaver_mode !== undefined ? recent.screensaver_mode : (settings.screensaver_mode ?? 'off');
-        await createTimer(recent.seconds, recent.label, subtleMode, autoSuspend, preventSleep, screensaverMode);
+        await createTimer(recent.seconds, recent.label, subtleMode, autoSuspend, preventSleep);
     };
 
     // Save active timer as preset
@@ -551,18 +545,6 @@ export function TimerPanel() {
                         onChange={(value) => updateSetting('timer_prevent_sleep', value)}
                     />
                 </PanelSectionRow>
-
-                {settings.timer_prevent_sleep && (
-                    <PanelSectionRow>
-                        <ToggleField
-                            icon={<span style={{ fontSize: 14 }}>🖥️</span>}
-                            label="Screensaver"
-                            description={`Currently set to ${(settings.screensaver_mode || 'off') === 'off' ? 'Off' : settings.screensaver_mode === 'wallpaper' ? 'Wallpaper' : settings.screensaver_mode === 'black' ? 'Black' : 'Dim'} · Change in Settings → Screensaver`}
-                            checked={timerScreensaver}
-                            onChange={setTimerScreensaver}
-                        />
-                    </PanelSectionRow>
-                )}
 
             </PanelSection>
 

@@ -1,21 +1,14 @@
-# AlarMe - Decky Loader Plugin
+# Timeout - Decky Loader Plugin
 
-An advanced alarm and timer plugin for Steam Deck with persistent alarms, snooze functionality, Pomodoro productivity timer, and customizable sounds.
+Play-time discipline, focus with teeth, and optional parental lockout for Steam Deck.
 
-![AlarMe](https://img.shields.io/badge/Decky-Plugin-blue)
-![Version](https://img.shields.io/badge/release-v1.7.5-green)
-![Downloads](https://img.shields.io/badge/dynamic/json?url=https://plugins.deckbrew.xyz/plugins?query=AlarMe&query=$[:1].downloads&suffix=%20downloads&label=Decky%20Store&color=blue)
+![Timeout](https://img.shields.io/badge/Decky-Plugin-blue)
+![Version](https://img.shields.io/badge/release-v0.1.0-green)
 ![License](https://img.shields.io/badge/license-BSD--3--Clause-blue)
 
-![AlarMe Promo](assets/promo.png)
+![Timeout Promo](assets/promo.png)
 
 ## Features
-
-### ⏱️ Stopwatch
-- **Precision tracking** - Keep track of elapsed time up to centiseconds
-- **Lap support** - Record and copy up to 100 laps per session
-- **In-game overlay** - View your running stopwatch directly in the Steam performance overlay
-- **Background execution** - Stopwatch continues running even if the plugin is closed
 
 ### ⏳ Timers
 - **Multiple concurrent timers** - Run several timers at once
@@ -33,7 +26,7 @@ An advanced alarm and timer plugin for Steam Deck with persistent alarms, snooze
 - **Per-alarm settings** - Individual subtle mode and auto-suspend options
 - **Persistent** - Alarms survive device reboots
 
-### 🍅 Pomodoro Timer
+### 🍅 Focus (Pomodoro)
 - **Focus mode** - Customizable work duration (15-60 minutes)
 - **Break intervals** - Short breaks (3-15 min) and long breaks (10-45 min)
 - **Session tracking** - Configurable sessions until long break (2-8)
@@ -43,65 +36,52 @@ An advanced alarm and timer plugin for Steam Deck with persistent alarms, snooze
 - **Background persistence** - Timer continues running even if you close the menu
 - **Reset Stats** - Option to wipe your history and start fresh
 
-### 🔁 Periodic Reminders
-- **Recurring Alerts** - Set reminders that repeat every X minutes (e.g., "Drink Water" every 30 mins)
-- **Gaming Mode** - Smart reminders that only tick while a game is running
-- **App Detection** - Automatically detects active games
-- **Start Delay** - Option to delay the first reminder
-- **Limit Recurrence** - Stop after a set number of repeats
+### 🔊 Sound Options
+- **Per-feature sounds** - Different sounds for Timers, Alarms, and Pomodoro
+- **Soundless mode** - Silent alarm option for quiet notifications
+- **Volume control** - Adjust alarm volume independently per feature
+- **Custom sounds** - Import your own MP3, WAV, or OGG files from `~/Music/Timeout_Sounds`
+- **Folder sync** - Rescan to add new sounds or remove deleted ones
+
+### 🎮 In-Game Overlay
+- **Easy check** - Quickly see your alarms and timers
+- **Native Integration** - Fits seamlessly into SteamOS UI and renders above game content only when the HUD needs it, so QAM and plugin pages stay interactive while a game runs
+- **Non-Intrusive** - Horizontal micro-alerts that won't block game UI
+- **Pixel shift** - OLED burn-in protection that slowly orbits the overlay position
+
+### 💤 Prevent Sleep
+- **Keep awake** - Prevent the Steam Deck from sleeping while you have active timers, alarms, or Pomodoro sessions
+- **Native inputs** - Uses native SteamOS input inhibition for seamless operation in Game Mode
 
 ### 💾 Data Management
 - **Backup & Restore** - Export your settings, alarms, timers, and stats to a file.
 - **Easy Migration** - Move your data between devices or restore after re-install.
 
-### 🔊 Sound Options
-- **Per-feature sounds** - Different sounds for Timers, Alarms, and Pomodoro
-- **Soundless mode** - Silent alarm option for quiet notifications
-- **Volume control** - Adjust alarm volume independently per feature
-- **Custom sounds** - Import your own MP3, WAV, or OGG files from `~/Music/AlarMe_Sounds`
-- **Folder sync** - Rescan to add new sounds or remove deleted ones
-
 ### ⚙️ Settings
-- **Prevent Sleep Mode** - Keep the Steam Deck awake while you have active timers, alarms, or pomodoro sessions. Uses native inputs so it works seamlessly in Game Mode.
 - **Subtle mode** - Choose between fullscreen alerts or small toasts
 - **Auto-suspend** - Automatically suspend the device after alert (enables subtle mode)
 - **24/12 hour format** - Choose your preferred time display
 - **Global volume control** - Per-feature volume settings
 
-### 🎮 In-Game Overlay
-- **Easy check** - Quickly see your alarms and timers
-- **Native Integration** - Fits seamlessly into SteamOS UI and renders above game content only when the HUD or active screensaver needs it, so QAM and plugin pages stay interactive while a game runs
-- **Non-Intrusive** - Horizontal micro-alerts that won't block game UI
-- **Pixel shift** - OLED burn-in protection that slowly orbits the overlay position
-
-### 🌙 Screensaver Mode
-- **Per-alert control** - Enable screensaver individually on any timer, alarm, reminder, or stopwatch alongside Prevent Sleep
-- **Wallpaper backgrounds** - Lorem Picsum, Bing Daily, Lorem Flickr, NASA APOD, or a local folder; cache and personal images live under Decky’s runtime data (`DECKY_PLUGIN_RUNTIME_DIR`, typically under `~/homebrew/data/`); images prefetch before idle so the overlay rarely shows a loading state; automatic rotation walks the pool in a random order each cycle; Bing Daily and NASA APOD apply a slow image drift for OLED burn-in on static daily images; optional drift for local-folder wallpapers in settings
-- **4 clock styles** - Digital, Digital + Seconds, Large (blinking colon), Analog
-- **4 layout modes** - Compact (overlay bar), Large (centered card), Fullscreen, Floating (drifts to prevent burn-in)
-- **Full Black, Dim, or Wallpaper** - Choose between a fully opaque black screen, a configurable dim overlay, or live wallpapers
-- **OLED burn-in protection** - Pixel shift and floating drift options keep static elements moving
-- **Standalone mode** - Activate screensaver on a timer independent of alerts, for general OLED protection
-- **Idle timer** - Configurable delay before the screensaver activates after your last input
-- **Gamepad & touch dismiss** - Any button press or screen tap temporarily wakes the screen
-- **System stats & network info** - Optionally show CPU temp, RAM, Wi-Fi signal during screensaver
-- **Weather** - Optional Open-Meteo forecast (no API key): large/fullscreen layouts show a weather card; compact overlay shows a short inline readout during the screensaver. City search with live suggestions, or an approximate IP-based location (tries ipapi.co, then geojs.io) when no city is saved
-- **Quick preview** - **Screen** in the header closes the QAM and runs the screensaver immediately for a clean test
-- **Badge indicators** - 🌙 badge shows which items have screensaver enabled
-
 > **Note**: The overlay appears when you open the Quick Access Menu (•••) or Steam Menu. It uses the empty black bar space reserved by SteamOS to display your upcoming alarms and timers without obstructing any interface elements.
+
+## Roadmap
+
+### Planned Features
+- **Game Limits** - whitelist/blacklist game selection; global default limits plus per-game overrides; daily open budget (e.g. 3 opens/day) and/or per-session time cap (e.g. 20 min/open), midnight reset; half-opens (quit a session past a threshold to bank a partial open); optional cooldowns between sessions (compounding); time-of-day curfew (day-of-week aware, e.g. no play 12am–5am); one-time "5 more mins" concession so a curfew hit can save/finish.
+- **Focus enforcement tiers** - loose / steady / strict escalation so Pomodoro focus has teeth.
+- **Parental controls + passcode** - distinguish self-control mode from administrative lockout.
 
 ## Screenshots
 
 <details>
 <summary>📸 Click to view screenshots</summary>
 
-### 🔔 Alarms & Reminders
+> **Note**: Screenshots may be stale until re-shot for Timeout.
+
+### 🔔 Alarms
 ![Alarm List](assets/screenshots/alarm_list.png)
 *Manage multiple alarms with ease.*
-
-![Reminder List](assets/screenshots/remind_list.png)
-*Keep track of your recurring reminders.*
 
 ### ⏱️ Quick Timers
 ![Timer Presets](assets/screenshots/timer_tab.png)
@@ -118,9 +98,6 @@ An advanced alarm and timer plugin for Steam Deck with persistent alarms, snooze
 ![Alarm Editor](assets/screenshots/alarm_editor.png)
 *Detailed settings for every alarm.*
 
-![Reminder Editor](assets/screenshots/reminder_editor.png)
-*Set periodic reminders like "Hydration Check" every 45 mins.*
-
 ### ⚙️ Customizable Settings
 ![Settings Panel](assets/screenshots/backup_custom_sound_settings.png)
 *New dedicated Settings Modal with Sound Manager and Backup options.*
@@ -136,20 +113,19 @@ An advanced alarm and timer plugin for Steam Deck with persistent alarms, snooze
 ### From Decky Store
 1. Open Decky Loader on your Steam Deck
 2. Go to the Store tab
-3. Search for "AlarMe"
-4. Click Install
+3. Search for **Timeout** in the Decky store (coming soon — use manual install below for now).
 
 ### Manual Installation
-1. Download the latest release from the [Releases](https://github.com/lemossilva/alarme-decky-plugin/releases) page
+1. Download the latest release from the [Releases](https://github.com/Lakeland97/timeout-decky-plugin/releases) page
 2. Open Decky Loader > Settings > General > "Install from Zip" > Select the Zip release file (not source code!).
 3. Restart Decky Loader
 
 ## Adding Custom Sounds
 
 1. Go to Desktop Mode.
-2. Create a folder named `AlarMe_Sounds` in your Music folder (`~/Music/AlarMe_Sounds`).
+2. Create a folder named `Timeout_Sounds` in your Music folder (`~/Music/Timeout_Sounds`).
 3. Place your sound files (`.mp3`, `.wav`, or `.ogg`, max 2MB) in this folder.
-4. Return to Gaming Mode > AlarMe > Settings.
+4. Return to Gaming Mode > Timeout > Settings.
 5. Scroll down to "**Custom Sounds**" and click "**Import Sounds**".
 6. Your sounds will now appear in the sound picker lists!
 
@@ -202,8 +178,6 @@ pnpm run watch
 
 - All settings, alarms, timers, and related data stay on your device.
 - There is no analytics, telemetry, or user tracking.
-- Optional **screensaver weather** (off by default) uses HTTPS to Open-Meteo and, when configured, geocoding search; if no city is set it may call public IP-lookup endpoints to approximate coordinates. Wallpaper modes that load remote images only request those image sources.
-
 
 ## License
 
@@ -211,15 +185,14 @@ BSD-3-Clause License - See [LICENSE](LICENSE) for details.
 
 ## Credits
 
-- **Author**: Guilherme Lemos
+- **Author**: Lakeland97
+- **Based on**: [AlarMe](https://github.com/lemossilva/alarme-decky-plugin) by Guilherme Lemos
 - **Inspiration**: [simple-timer](https://github.com/decktools-xyz/simple-timer)
-- **Periodic Reminders Inspiration**: [DeckyHourNotifications](https://github.com/mpcallahan/DeckyHourNotifications) by [@mpcallahan](https://github.com/mpcallahan)
 - **Framework**: [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader)
 - **Icons**: [React Icons](https://react-icons.github.io/react-icons/)
 
 ## Support
 
-If you encounter any issues, please [open an issue](https://github.com/lemossilva/alarme-decky-plugin/issues) on GitHub.
-
+If you encounter any issues, please [open an issue](https://github.com/Lakeland97/timeout-decky-plugin/issues) on GitHub.
 
 

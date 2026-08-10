@@ -7,7 +7,7 @@ const exportBackupToFileCall = callable<[string], boolean>('export_backup_to_fil
 const importBackupFromFileCall = callable<[string], boolean>('import_backup_from_file');
 
 // Default path for Steam Deck user
-const DEFAULT_BACKUP_PATH = "/home/deck/alarme_backup.json";
+const DEFAULT_BACKUP_PATH = "/home/deck/timeout_backup.json";
 
 const ExportModalContent = ({ closeModal }: { closeModal?: () => void }) => {
     const [path, setPath] = useState(DEFAULT_BACKUP_PATH);
