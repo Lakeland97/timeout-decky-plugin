@@ -93,23 +93,23 @@ export function usePomodoro() {
             setState(newState);
         };
 
-        addEventListener('alarme_pomodoro_tick', handleTick);
-        addEventListener('alarme_pomodoro_started', handlePhaseChange);
-        addEventListener('alarme_pomodoro_phase_changed', handlePhaseChange);
-        addEventListener('alarme_pomodoro_work_ended', handlePhaseChange);
-        addEventListener('alarme_pomodoro_break_ended', handlePhaseChange);
-        addEventListener('alarme_pomodoro_stopped', handleStopped);
+        addEventListener('timeout_pomodoro_tick', handleTick);
+        addEventListener('timeout_pomodoro_started', handlePhaseChange);
+        addEventListener('timeout_pomodoro_phase_changed', handlePhaseChange);
+        addEventListener('timeout_pomodoro_work_ended', handlePhaseChange);
+        addEventListener('timeout_pomodoro_break_ended', handlePhaseChange);
+        addEventListener('timeout_pomodoro_stopped', handleStopped);
 
         // Load initial data
         loadState();
 
         return () => {
-            removeEventListener('alarme_pomodoro_tick', handleTick);
-            removeEventListener('alarme_pomodoro_started', handlePhaseChange);
-            removeEventListener('alarme_pomodoro_phase_changed', handlePhaseChange);
-            removeEventListener('alarme_pomodoro_work_ended', handlePhaseChange);
-            removeEventListener('alarme_pomodoro_break_ended', handlePhaseChange);
-            removeEventListener('alarme_pomodoro_stopped', handleStopped);
+            removeEventListener('timeout_pomodoro_tick', handleTick);
+            removeEventListener('timeout_pomodoro_started', handlePhaseChange);
+            removeEventListener('timeout_pomodoro_phase_changed', handlePhaseChange);
+            removeEventListener('timeout_pomodoro_work_ended', handlePhaseChange);
+            removeEventListener('timeout_pomodoro_break_ended', handlePhaseChange);
+            removeEventListener('timeout_pomodoro_stopped', handleStopped);
         };
     }, [loadState]);
 

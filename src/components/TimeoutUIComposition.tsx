@@ -5,7 +5,7 @@ import { useGameStatus } from "../hooks/useGameStatus";
 import { useOverlayData } from "../hooks/useOverlayData";
 import { useMissedAlerts } from "../hooks/useMissedAlerts";
 
-export function AlarMeUIComposition() {
+export function TimeoutUIComposition() {
     const { settings } = useSettings();
     const { isActive: inhibitorActive } = useSleepInhibitor();
     const isGameRunning = useGameStatus();

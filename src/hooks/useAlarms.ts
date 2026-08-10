@@ -146,7 +146,7 @@ export function useAlarms() {
     const debugSound = useCallback(async (filename: string) => {
         try {
             const result = await debugSoundCall(filename);
-            console.log('AlarMe Debug Sound:', result);
+            console.log('Timeout Debug Sound:', result);
             return result;
         } catch (e) {
             console.error('Failed to debug sound:', e);
@@ -203,13 +203,13 @@ export function useAlarms() {
             setAlarms(updatedAlarms);
         };
 
-        addEventListener('alarme_alarms_updated', handleAlarmsUpdated);
+        addEventListener('timeout_alarms_updated', handleAlarmsUpdated);
 
         // Load initial data
         loadAlarms();
 
         return () => {
-            removeEventListener('alarme_alarms_updated', handleAlarmsUpdated);
+            removeEventListener('timeout_alarms_updated', handleAlarmsUpdated);
         };
     }, [loadAlarms]);
 

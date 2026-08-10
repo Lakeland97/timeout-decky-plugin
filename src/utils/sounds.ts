@@ -47,7 +47,7 @@ export async function playAlarmSound(soundFile: string = 'alarm.mp3', volume?: n
         try {
             const result = await getSoundDataCall(soundFile);
             if (!result.success || !result.data || !result.mime_type) {
-                console.error('[Alarme] Failed to load custom sound:', result.error);
+                console.error('[Timeout] Failed to load custom sound:', result.error);
                 return null;
             }
 
@@ -61,7 +61,7 @@ export async function playAlarmSound(soundFile: string = 'alarm.mp3', volume?: n
                 (audio as any)._blobUrl = null;
             };
         } catch (e) {
-            console.error('[Alarme] Failed to prepare custom sound:', e);
+            console.error('[Timeout] Failed to prepare custom sound:', e);
             return null;
         }
     } else {

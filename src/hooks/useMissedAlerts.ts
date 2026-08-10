@@ -9,7 +9,7 @@ export function useMissedAlerts() {
 
     // Persistent dismissal logic - track when user last viewed the report
     const [lastDismissed, setLastDismissed] = useState<number>(() => {
-        return parseInt(localStorage.getItem('alarme_missed_dismissed_at') || '0');
+        return parseInt(localStorage.getItem('timeout_missed_dismissed_at') || '0');
     });
 
     useEffect(() => {
@@ -30,8 +30,8 @@ export function useMissedAlerts() {
             setMissedItems(items || []);
         };
 
-        addEventListener('alarme_missed_items_updated', handleMissedUpdate);
-        return () => { removeEventListener('alarme_missed_items_updated', handleMissedUpdate); };
+        addEventListener('timeout_missed_items_updated', handleMissedUpdate);
+        return () => { removeEventListener('timeout_missed_items_updated', handleMissedUpdate); };
     }, []);
 
     const latestMissedTime = missedItems.length > 0
@@ -45,7 +45,7 @@ export function useMissedAlerts() {
     const markAsSeen = () => {
         const now = Date.now() / 1000;
         setLastDismissed(now);
-        localStorage.setItem('alarme_missed_dismissed_at', now.toString());
+        localStorage.setItem('timeout_missed_dismissed_at', now.toString());
     };
 
     return {

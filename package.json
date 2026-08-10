@@ -1,7 +1,7 @@
 {
-    "name": "alarme-decky-plugin",
-    "version": "1.7.5",
-    "description": "Advanced alarm and timer plugin for Decky Loader with snooze, recurring alarms, and Pomodoro mode.",
+    "name": "timeout-decky-plugin",
+    "version": "0.1.0",
+    "description": "Play-time discipline, focus enforcement, and parental controls for Decky Loader.",
     "type": "module",
     "scripts": {
         "build": "rollup -c && node scripts/copy-assets.js",
@@ -11,22 +11,24 @@
     },
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/lemossilva/alarme-decky-plugin.git"
+        "url": "git+https://github.com/Lakeland97/timeout-decky-plugin.git"
     },
     "keywords": [
         "decky",
         "plugin",
-        "alarm",
         "timer",
         "pomodoro",
-        "steam-deck"
+        "steam-deck",
+        "focus",
+        "parental",
+        "limits"
     ],
-    "author": "Guilherme Lemos",
+    "author": "Lakeland97",
     "license": "BSD-3-Clause",
     "bugs": {
-        "url": "https://github.com/lemossilva/alarme-decky-plugin/issues"
+        "url": "https://github.com/Lakeland97/timeout-decky-plugin/issues"
     },
-    "homepage": "https://github.com/lemossilva/alarme-decky-plugin#readme",
+    "homepage": "https://github.com/Lakeland97/timeout-decky-plugin#readme",
     "devDependencies": {
         "@decky/rollup": "^1.0.1",
         "@decky/ui": "^4.9.0",

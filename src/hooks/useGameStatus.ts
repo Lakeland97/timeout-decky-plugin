@@ -24,7 +24,7 @@ export function useGameStatus() {
                 unregister = SteamClient.GameSessions.RegisterForAppLifetimeNotifications(onGameLifetime);
             }
         } catch (e) {
-            console.error("AlarMe: useGameStatus failed", e);
+            console.error("Timeout: useGameStatus failed", e);
         }
 
         return () => {

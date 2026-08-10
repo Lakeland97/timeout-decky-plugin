@@ -90,7 +90,7 @@ function SnoozeModalContent({ id: _id, label, type, sound, volume, defaultSnooze
             try {
                 const result = await getSoundDataCall(soundFile);
                 if (!result.success || !result.data || !result.mime_type) {
-                    console.error('[Alarme] SnoozeModal: Failed to load custom sound:', result.error);
+                    console.error('[Timeout] SnoozeModal: Failed to load custom sound:', result.error);
                     return;
                 }
 
@@ -102,9 +102,9 @@ function SnoozeModalContent({ id: _id, label, type, sound, volume, defaultSnooze
                 audio.loop = true; // Keep playing until dismissed
                 await audio.play();
                 audioRef.current = audio;
-                console.log('[Alarme] SnoozeModal: Custom sound playing');
+                console.log('[Timeout] SnoozeModal: Custom sound playing');
             } catch (e) {
-                console.error('[Alarme] SnoozeModal: Failed to play custom sound:', e);
+                console.error('[Timeout] SnoozeModal: Failed to play custom sound:', e);
             }
         };
 

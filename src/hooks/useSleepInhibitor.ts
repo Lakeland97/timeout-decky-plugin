@@ -30,11 +30,11 @@ export function useSleepInhibitor() {
             setStatus(newStatus);
         };
 
-        addEventListener('alarme_sleep_inhibitor_updated', handleStatusUpdate);
+        addEventListener('timeout_sleep_inhibitor_updated', handleStatusUpdate);
         loadStatus();
 
         return () => {
-            removeEventListener('alarme_sleep_inhibitor_updated', handleStatusUpdate);
+            removeEventListener('timeout_sleep_inhibitor_updated', handleStatusUpdate);
         };
     }, [loadStatus]);
 

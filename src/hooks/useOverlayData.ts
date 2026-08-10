@@ -23,7 +23,7 @@ export function useOverlayData(settings: UserSettings, isGameRunning?: boolean) 
                 alertsRef.current = data.alerts;
             }
         } catch (e) {
-            console.error('[AlarMe Overlay] Failed to fetch overlay data:', e);
+            console.error('[Timeout Overlay] Failed to fetch overlay data:', e);
         }
     }, [settings.overlay_enabled]);
 
@@ -66,25 +66,25 @@ export function useOverlayData(settings: UserSettings, isGameRunning?: boolean) 
             ));
         };
 
-        addEventListener('alarme_timers_updated', handleTimersUpdated);
-        addEventListener('alarme_alarms_updated', handleAlarmsUpdated);
-        addEventListener('alarme_pomodoro_started', handlePomodoroStarted);
-        addEventListener('alarme_pomodoro_stopped', handlePomodoroStopped);
-        addEventListener('alarme_pomodoro_phase_changed', handlePomodoroPhaseChanged);
-        addEventListener('alarme_timer_tick', handleTimerTick);
-        addEventListener('alarme_pomodoro_tick', handlePomodoroTick);
+        addEventListener('timeout_timers_updated', handleTimersUpdated);
+        addEventListener('timeout_alarms_updated', handleAlarmsUpdated);
+        addEventListener('timeout_pomodoro_started', handlePomodoroStarted);
+        addEventListener('timeout_pomodoro_stopped', handlePomodoroStopped);
+        addEventListener('timeout_pomodoro_phase_changed', handlePomodoroPhaseChanged);
+        addEventListener('timeout_timer_tick', handleTimerTick);
+        addEventListener('timeout_pomodoro_tick', handlePomodoroTick);
 
         // Periodic refresh for alarm countdown updates (every 30s)
         const refreshInterval = setInterval(fetchOverlayData, 30000);
 
         return () => {
-            removeEventListener('alarme_timers_updated', handleTimersUpdated);
-            removeEventListener('alarme_alarms_updated', handleAlarmsUpdated);
-            removeEventListener('alarme_pomodoro_started', handlePomodoroStarted);
-            removeEventListener('alarme_pomodoro_stopped', handlePomodoroStopped);
-            removeEventListener('alarme_pomodoro_phase_changed', handlePomodoroPhaseChanged);
-            removeEventListener('alarme_timer_tick', handleTimerTick);
-            removeEventListener('alarme_pomodoro_tick', handlePomodoroTick);
+            removeEventListener('timeout_timers_updated', handleTimersUpdated);
+            removeEventListener('timeout_alarms_updated', handleAlarmsUpdated);
+            removeEventListener('timeout_pomodoro_started', handlePomodoroStarted);
+            removeEventListener('timeout_pomodoro_stopped', handlePomodoroStopped);
+            removeEventListener('timeout_pomodoro_phase_changed', handlePomodoroPhaseChanged);
+            removeEventListener('timeout_timer_tick', handleTimerTick);
+            removeEventListener('timeout_pomodoro_tick', handlePomodoroTick);
             clearInterval(refreshInterval);
         };
     }, [settings.overlay_enabled, fetchOverlayData]);

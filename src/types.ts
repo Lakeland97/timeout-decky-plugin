@@ -1,4 +1,4 @@
-// TypeScript type definitions for AlarMe plugin
+// TypeScript type definitions for Timeout plugin
 
 // Timer types
 export interface Timer {

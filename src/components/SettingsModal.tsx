@@ -455,7 +455,7 @@ const GeneralSettingsPage = () => {
             <PanelSection title="Custom Sounds">
                 <PanelSectionRow>
                     <div style={{ fontSize: 13, color: '#dddddd', padding: '4px 0' }}>
-                        Add your own sounds by placing files in <span style={{ fontFamily: 'monospace', backgroundColor: '#ffffff22', padding: '2px 4px', borderRadius: 4 }}>~/Music/AlarMe_Sounds</span>
+                        Add your own sounds by placing files in <span style={{ fontFamily: 'monospace', backgroundColor: '#ffffff22', padding: '2px 4px', borderRadius: 4 }}>~/Music/Timeout_Sounds</span>
                     </div>
                 </PanelSectionRow>
                 <PanelSectionRow>
@@ -915,7 +915,7 @@ const showFactoryResetConfirm = (onConfirm: () => void) => {
     showModal(
         <ConfirmModal
             strTitle="Factory Reset"
-            strDescription="This will permanently delete all alarms, timers, Pomodoro data, and reset all settings to defaults. Custom sounds in ~/Music/AlarMe_Sounds will NOT be deleted. This action cannot be undone."
+            strDescription="This will permanently delete all alarms, timers, Pomodoro data, and reset all settings to defaults. Custom sounds in ~/Music/Timeout_Sounds will NOT be deleted. This action cannot be undone."
             strOKButtonText="Reset Everything"
             strCancelButtonText="Cancel"
             onOK={onConfirm}
@@ -961,7 +961,7 @@ const FactoryResetPage = () => {
                 </PanelSectionRow>
                 <PanelSectionRow>
                     <div style={{ fontSize: 12, color: '#888888', padding: '4px 0', fontStyle: 'italic' }}>
-                        Note: Custom sounds in ~/Music/AlarMe_Sounds will not be deleted.
+                        Note: Custom sounds in ~/Music/Timeout_Sounds will not be deleted.
                     </div>
                 </PanelSectionRow>
                 <PanelSectionRow>
@@ -988,7 +988,7 @@ const FactoryResetPage = () => {
                     <Focusable style={{ width: '100%' }}>
                         <div style={{ fontSize: 13, color: '#888888', textAlign: 'center' }}>
                             <p style={{ marginBottom: 8 }}>
-                                <strong>AlarMe</strong> {version ? `v${version}` : '…'}
+                                <strong>Timeout</strong> {version ? `v${version}` : '…'}
                             </p>
                             <p>
                                 By Guilherme Lemos
@@ -1002,7 +1002,7 @@ const FactoryResetPage = () => {
 };
 
 // Settings route constant
-export const SETTINGS_ROUTE = '/alarme/settings';
+export const SETTINGS_ROUTE = '/timeout/settings';
 
 // Settings Page Component - exported for route registration
 export const SettingsPage = () => {

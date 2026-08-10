@@ -201,15 +201,15 @@ export function useSettings() {
             setPresets(updatedPresets);
         };
 
-        addEventListener('alarme_settings_updated', handleSettingsUpdated);
-        addEventListener('alarme_presets_updated', handlePresetsUpdated);
+        addEventListener('timeout_settings_updated', handleSettingsUpdated);
+        addEventListener('timeout_presets_updated', handlePresetsUpdated);
 
         // Load initial data
         loadData();
 
         return () => {
-            removeEventListener('alarme_settings_updated', handleSettingsUpdated);
-            removeEventListener('alarme_presets_updated', handlePresetsUpdated);
+            removeEventListener('timeout_settings_updated', handleSettingsUpdated);
+            removeEventListener('timeout_presets_updated', handlePresetsUpdated);
         };
     }, [loadData]);
 

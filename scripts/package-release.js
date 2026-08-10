@@ -7,7 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
-const pluginName = 'alarme-decky-plugin';
+const pluginName = 'timeout-decky-plugin';
 const releaseDir = path.join(rootDir, 'release');
 const tempDir = path.join(releaseDir, pluginName);
 const zipFile = path.join(releaseDir, `${pluginName}.zip`);

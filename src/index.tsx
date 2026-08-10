@@ -26,7 +26,7 @@ import { PomodoroNotification } from "./components/PomodoroNotification";
 import { GameOverlay } from "./components/GameOverlay";
 import showMissedReportModal from "./components/MissedReportModal";
 import { showSleepInhibitorModal } from "./components/SleepInhibitorModal";
-import { AlarMeUIComposition } from "./components/AlarMeUIComposition";
+import { TimeoutUIComposition } from "./components/TimeoutUIComposition";
 import { playAlarmSound } from "./utils/sounds";
 import { SteamUtils } from "./utils/steam";
 import { formatTime } from "./utils/time";
@@ -488,15 +488,15 @@ export default definePlugin(() => {
     };
 
     // Register event listeners
-    addEventListener('alarme_timer_completed', handleTimerCompleted);
-    addEventListener('alarme_alarm_triggered', handleAlarmTriggered);
-    addEventListener('alarme_pomodoro_work_ended', handlePomodoroWorkEnded);
-    addEventListener('alarme_pomodoro_break_ended', handlePomodoroBreakEnded);
+    addEventListener('timeout_timer_completed', handleTimerCompleted);
+    addEventListener('timeout_alarm_triggered', handleAlarmTriggered);
+    addEventListener('timeout_pomodoro_work_ended', handlePomodoroWorkEnded);
+    addEventListener('timeout_pomodoro_break_ended', handlePomodoroBreakEnded);
 
     // Missed items toast
-    addEventListener('alarme_missed_items_toast', (count: number) => {
+    addEventListener('timeout_missed_items_toast', (count: number) => {
         toaster.toast({
-            title: "AlarMe",
+            title: "Timeout",
             body: `You missed ${count} alert${count !== 1 ? 's' : ''} while away.`
         });
     });
@@ -518,22 +518,22 @@ export default definePlugin(() => {
                     // Game start
                     runningAppIds.add(appId);
                     setGameRunning(true);
-                    console.log(`[AlarMe] App ${appId} started. Running apps: ${runningAppIds.size}`);
+                    console.log(`[Timeout] App ${appId} started. Running apps: ${runningAppIds.size}`);
                 } else {
                     // Game end
                     runningAppIds.delete(appId);
                     const isAnyGameRunning = runningAppIds.size > 0;
                     setGameRunning(isAnyGameRunning);
-                    console.log(`[AlarMe] App ${appId} ended. Running apps: ${runningAppIds.size}`);
+                    console.log(`[Timeout] App ${appId} ended. Running apps: ${runningAppIds.size}`);
                 }
             });
         }
     } catch (e) {
-        console.error("AlarMe: Failed to register game listeners", e);
+        console.error("Timeout: Failed to register game listeners", e);
     }
 
     // Inject CSS so modal portals always render above the screensaver overlay.
-    const modalStyleId = 'alarme-modal-zindex-fix';
+    const modalStyleId = 'timeout-modal-zindex-fix';
     if (!document.getElementById(modalStyleId)) {
         const style = document.createElement('style');
         style.id = modalStyleId;
@@ -546,18 +546,18 @@ export default definePlugin(() => {
 
     // Register in-game overlay using Decky's global component system
     // This API injects components into both Steam UI and game overlay
-    const OVERLAY_COMPONENT_NAME = 'AlarMeGameOverlay';
+    const OVERLAY_COMPONENT_NAME = 'TimeoutGameOverlay';
     routerHook.addGlobalComponent(OVERLAY_COMPONENT_NAME, GameOverlay);
 
-    const COMPOSITION_COMPONENT_NAME = 'AlarMeUIComposition';
-    routerHook.addGlobalComponent(COMPOSITION_COMPONENT_NAME, AlarMeUIComposition);
+    const COMPOSITION_COMPONENT_NAME = 'TimeoutUIComposition';
+    routerHook.addGlobalComponent(COMPOSITION_COMPONENT_NAME, TimeoutUIComposition);
 
     return {
-        name: "AlarMe",
+        name: "Timeout",
         titleView: (
             <div className={staticClasses.Title}>
                 <FaHourglassHalf style={{ marginRight: 8 }} />
-                AlarMe
+                Timeout
             </div>
         ),
         content: <Content />,
@@ -565,10 +565,10 @@ export default definePlugin(() => {
         alwaysRender: true, // Keep plugin state active for overlay visibility
 
         onDismount: () => {
-            removeEventListener('alarme_timer_completed', handleTimerCompleted);
-            removeEventListener('alarme_alarm_triggered', handleAlarmTriggered);
-            removeEventListener('alarme_pomodoro_work_ended', handlePomodoroWorkEnded);
-            removeEventListener('alarme_pomodoro_break_ended', handlePomodoroBreakEnded);
+            removeEventListener('timeout_timer_completed', handleTimerCompleted);
+            removeEventListener('timeout_alarm_triggered', handleAlarmTriggered);
+            removeEventListener('timeout_pomodoro_work_ended', handlePomodoroWorkEnded);
+            removeEventListener('timeout_pomodoro_break_ended', handlePomodoroBreakEnded);
             // Unregister settings route and overlay
             routerHook.removeRoute(SETTINGS_ROUTE);
             routerHook.removeGlobalComponent(OVERLAY_COMPONENT_NAME);

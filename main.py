@@ -1,4 +1,4 @@
-# AlarMe - Decky Loader Plugin
+# Timeout - Decky Loader Plugin
 # Python Backend
 
 from settings import SettingsManager
@@ -15,8 +15,8 @@ import struct
 # Initialize settings
 settingsDir = os.environ["DECKY_PLUGIN_SETTINGS_DIR"]
 runtimeDir = os.environ["DECKY_PLUGIN_RUNTIME_DIR"]
-decky.logger.info(f'AlarMe: Settings path = {os.path.join(settingsDir, "settings.json")}')
-decky.logger.info(f"AlarMe: Runtime data path = {runtimeDir}")
+decky.logger.info(f'Timeout: Settings path = {os.path.join(settingsDir, "settings.json")}')
+decky.logger.info(f"Timeout: Runtime data path = {runtimeDir}")
 settings = SettingsManager(name="settings", settings_directory=settingsDir)
 settings.read()
 
@@ -126,7 +126,7 @@ class Plugin:
     async def _emit_missed_update(self):
         """Emit the current missed items to the frontend."""
         missed = await self.get_missed_items()
-        await decky.emit("alarme_missed_items_updated", missed)
+        await decky.emit("timeout_missed_items_updated", missed)
 
     async def _add_missed_item(self, m_type: str, m_id: str, label: str, timestamp: float, details: str = None):
         """Add an item to the missed alerts list."""
@@ -210,9 +210,9 @@ class Plugin:
             reason_parts.append(f"{alarm_count} alarm(s)")
 
         if should_inhibit:
-            reason = "AlarMe: " + ", ".join(reason_parts) + " active"
+            reason = "Timeout: " + ", ".join(reason_parts) + " active"
             await self._acquire_sleep_inhibitor(reason)
-            await decky.emit("alarme_sleep_inhibitor_updated", {
+            await decky.emit("timeout_sleep_inhibitor_updated", {
                 "active": True,
                 "reason": reason,
                 "items": inhibiting_items
@@ -223,7 +223,7 @@ class Plugin:
 
     async def _jiggler_loop(self):
         """Simulate activity periodically to prevent sleep using uinput keyboard events."""
-        decky.logger.info("AlarMe: Sleep inhibitor jiggler started")
+        decky.logger.info("Timeout: Sleep inhibitor jiggler started")
         
         # KEY_UNKNOWN (240) - a key code that doesn't map to any real key
         # This resets idle timers without affecting games or triggering any action
@@ -254,9 +254,9 @@ class Plugin:
                         os.write(self._uinput_fd, key_release)
                         os.write(self._uinput_fd, syn)
                         
-                        decky.logger.debug("AlarMe: uinput key event sent")
+                        decky.logger.debug("Timeout: uinput key event sent")
                     except Exception as e:
-                        decky.logger.warning(f"AlarMe: uinput write error: {e}")
+                        decky.logger.warning(f"Timeout: uinput write error: {e}")
                     
                 # Wait 30 seconds (well under typical sleep timeouts)
                 await asyncio.sleep(30)
@@ -264,7 +264,7 @@ class Plugin:
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            decky.logger.error(f"AlarMe: Jiggler loop error: {e}")
+            decky.logger.error(f"Timeout: Jiggler loop error: {e}")
             self._sleep_inhibitor_active = False
 
     async def _acquire_sleep_inhibitor(self, reason: str):
@@ -288,7 +288,7 @@ class Plugin:
                 fcntl.ioctl(fd, UI_SET_KEYBIT, 240)  # KEY_UNKNOWN - doesn't map to any real key
                 
                 # Build uinput_user_dev struct (size 1116 on Steam Deck)
-                name = b'AlarMe Sleep Inhibitor'.ljust(80, b'\x00')
+                name = b'Timeout Sleep Inhibitor'.ljust(80, b'\x00')
                 input_id = struct.pack('HHHH', 3, 1, 1, 1)  # bustype, vendor, product, version
                 total_size = 1116  # Confirmed working size on Steam Deck
                 payload = name + input_id + (b'\x00' * (total_size - len(name) - len(input_id)))
@@ -297,9 +297,9 @@ class Plugin:
                 fcntl.ioctl(fd, UI_DEV_CREATE)
                 
                 self._uinput_fd = fd
-                decky.logger.info("AlarMe: Created uinput keyboard device successfully")
+                decky.logger.info("Timeout: Created uinput keyboard device successfully")
             except Exception as e:
-                decky.logger.error(f"AlarMe: Failed to setup uinput: {e}")
+                decky.logger.error(f"Timeout: Failed to setup uinput: {e}")
                 self._uinput_fd = -1
                 return  # Cannot proceed without uinput
             
@@ -307,13 +307,13 @@ class Plugin:
             if self.loop and self._uinput_fd > 0:
                 self._sleep_inhibitor_active = True
                 self._jiggler_task = self.loop.create_task(self._jiggler_loop())
-                decky.logger.info(f"AlarMe: Sleep inhibitor active - {reason}")
-                await decky.emit("alarme_sleep_inhibitor_updated", {
+                decky.logger.info(f"Timeout: Sleep inhibitor active - {reason}")
+                await decky.emit("timeout_sleep_inhibitor_updated", {
                     "active": True,
                     "reason": reason
                 })
         except Exception as e:
-            decky.logger.error(f"AlarMe: Failed to acquire sleep inhibitor: {e}")
+            decky.logger.error(f"Timeout: Failed to acquire sleep inhibitor: {e}")
 
     async def _release_sleep_inhibitor(self):
         """Release the sleep inhibitor."""
@@ -332,20 +332,20 @@ class Plugin:
                     UI_DEV_DESTROY = 0x5502
                     fcntl.ioctl(self._uinput_fd, UI_DEV_DESTROY)
                     os.close(self._uinput_fd)
-                    decky.logger.info("AlarMe: uinput device destroyed")
+                    decky.logger.info("Timeout: uinput device destroyed")
                 except Exception as e:
-                    decky.logger.warning(f"AlarMe: Error closing uinput: {e}")
+                    decky.logger.warning(f"Timeout: Error closing uinput: {e}")
                 self._uinput_fd = -1
                 
             self._sleep_inhibitor_active = False
-            decky.logger.info("AlarMe: Sleep inhibitor released")
-            await decky.emit("alarme_sleep_inhibitor_updated", {
+            decky.logger.info("Timeout: Sleep inhibitor released")
+            await decky.emit("timeout_sleep_inhibitor_updated", {
                 "active": False,
                 "reason": "",
                 "items": []
             })
         except Exception as e:
-            decky.logger.error(f"AlarMe: Failed to release sleep inhibitor: {e}")
+            decky.logger.error(f"Timeout: Failed to release sleep inhibitor: {e}")
             # Force cleanup
             if self._uinput_fd > 0:
                 try:
@@ -391,7 +391,7 @@ class Plugin:
 
     async def disable_all_sleep_inhibitors(self) -> bool:
         """Disable all mechanisms preventing sleep."""
-        decky.logger.info("AlarMe: Disabling all sleep inhibitors")
+        decky.logger.info("Timeout: Disabling all sleep inhibitors")
 
         # Cancel all timers with prevent_sleep
         timers = await self._get_timers()
@@ -410,7 +410,7 @@ class Plugin:
             if alarm.get("prevent_sleep", False) and alarm.get("enabled", False):
                 alarm["enabled"] = False
         await self._save_alarms(alarms)
-        await decky.emit("alarme_alarms_updated", list(alarms.values()))
+        await decky.emit("timeout_alarms_updated", list(alarms.values()))
 
         await self._update_sleep_inhibitor()
 
@@ -447,7 +447,7 @@ class Plugin:
         # Check limit
         timers = await self._get_timers()
         if len(timers) >= MAX_ACTIVE_TIMERS:
-            decky.logger.warning(f"AlarMe: Timer limit reached ({MAX_ACTIVE_TIMERS})")
+            decky.logger.warning(f"Timeout: Timer limit reached ({MAX_ACTIVE_TIMERS})")
             return None
         
         timer_id = str(uuid.uuid4())[:8]
@@ -494,8 +494,8 @@ class Plugin:
             self._timer_handler(timer_id, end_time, label)
         )
         
-        decky.logger.info(f"AlarMe: Created timer {timer_id} for {seconds} seconds")
-        await decky.emit("alarme_timer_created", timer_data)
+        decky.logger.info(f"Timeout: Created timer {timer_id} for {seconds} seconds")
+        await decky.emit("timeout_timer_created", timer_data)
         await self._emit_all_timers()
         
         # Update sleep inhibitor
@@ -513,8 +513,8 @@ class Plugin:
         if timer_id in timers:
             del timers[timer_id]
             await self._save_timers(timers)
-            decky.logger.info(f"AlarMe: Cancelled timer {timer_id}")
-            await decky.emit("alarme_timer_cancelled", timer_id)
+            decky.logger.info(f"Timeout: Cancelled timer {timer_id}")
+            await decky.emit("timeout_timer_cancelled", timer_id)
             await self._emit_all_timers()
             # Update sleep inhibitor
             await self._update_sleep_inhibitor()
@@ -542,8 +542,8 @@ class Plugin:
         timer["paused_remaining"] = max(0, remaining)
         
         await self._save_timers(timers)
-        decky.logger.info(f"AlarMe: Paused timer {timer_id} with {remaining:.0f}s remaining")
-        await decky.emit("alarme_timer_paused", {"id": timer_id, "remaining": remaining})
+        decky.logger.info(f"Timeout: Paused timer {timer_id} with {remaining:.0f}s remaining")
+        await decky.emit("timeout_timer_paused", {"id": timer_id, "remaining": remaining})
         await self._emit_all_timers()
         # Update sleep inhibitor
         await self._update_sleep_inhibitor()
@@ -574,8 +574,8 @@ class Plugin:
             self._timer_handler(timer_id, new_end_time, timer["label"])
         )
         
-        decky.logger.info(f"AlarMe: Resumed timer {timer_id} with {remaining:.0f}s remaining")
-        await decky.emit("alarme_timer_resumed", {"id": timer_id, "remaining": remaining})
+        decky.logger.info(f"Timeout: Resumed timer {timer_id} with {remaining:.0f}s remaining")
+        await decky.emit("timeout_timer_resumed", {"id": timer_id, "remaining": remaining})
         await self._emit_all_timers()
         # Update sleep inhibitor
         await self._update_sleep_inhibitor()
@@ -599,7 +599,7 @@ class Plugin:
                 timer["subtle_mode"] = True
 
         await self._save_timers(timers)
-        await decky.emit("alarme_timer_updated", timer)
+        await decky.emit("timeout_timer_updated", timer)
         await self._emit_all_timers()
         return timer
 
@@ -641,7 +641,7 @@ class Plugin:
                     
                     #  Check if missed by > 60 seconds
                     if remaining < -60:
-                        decky.logger.info(f"AlarMe: Timer {timer_id} finished {abs(remaining):.0f}s ago - counting as MISSED")
+                        decky.logger.info(f"Timeout: Timer {timer_id} finished {abs(remaining):.0f}s ago - counting as MISSED")
                         await self._add_missed_item("timer", timer_id, label, end_time)
                         return # Skip sound/notification for missed items
 
@@ -652,7 +652,7 @@ class Plugin:
                     timer_auto_suspend = timer.get("auto_suspend", user_settings.get("timer_auto_suspend", False))
                     if timer_auto_suspend:
                         subtle = True
-                    await decky.emit("alarme_timer_completed", {
+                    await decky.emit("timeout_timer_completed", {
                         "id": timer_id,
                         "label": label,
                         "subtle": subtle,
@@ -662,18 +662,18 @@ class Plugin:
                         "time_format_24h": user_settings.get("time_format_24h", True),
                         "snooze_activation_delay": user_settings.get("snooze_activation_delay", 2.0)
                     })
-                    decky.logger.info(f"AlarMe: Timer {timer_id} completed")
+                    decky.logger.info(f"Timeout: Timer {timer_id} completed")
                     return
                 
                 # Emit update every second for real-time display
-                await decky.emit("alarme_timer_tick", {
+                await decky.emit("timeout_timer_tick", {
                     "id": timer_id,
                     "remaining": max(0, int(remaining))
                 })
                 await asyncio.sleep(1)
                 
         except asyncio.CancelledError:
-            decky.logger.info(f"AlarMe: Timer {timer_id} was cancelled")
+            decky.logger.info(f"Timeout: Timer {timer_id} was cancelled")
 
     async def _get_timers(self) -> dict:
         return await self.settings_getSetting(SETTINGS_KEY_TIMERS, {})
@@ -684,7 +684,7 @@ class Plugin:
 
     async def _emit_all_timers(self):
         timers = await self.get_active_timers()
-        await decky.emit("alarme_timers_updated", timers)
+        await decky.emit("timeout_timers_updated", timers)
 
     async def get_recent_timers(self) -> list:
         """Get list of recently used timers for quick access."""
@@ -751,7 +751,7 @@ class Plugin:
         # Check limit
         alarms = await self._get_alarms()
         if len(alarms) >= MAX_ALARMS:
-            decky.logger.warning(f"AlarMe: Alarm limit reached ({MAX_ALARMS})")
+            decky.logger.warning(f"Timeout: Alarm limit reached ({MAX_ALARMS})")
             return None
         
         alarm_id = str(uuid.uuid4())[:8]
@@ -788,8 +788,8 @@ class Plugin:
         alarms[alarm_id] = alarm_data
         await self._save_alarms(alarms)
         
-        decky.logger.info(f"AlarMe: Created alarm {alarm_id} for {hour:02d}:{minute:02d} with sound {sound}")
-        await decky.emit("alarme_alarm_created", alarm_data)
+        decky.logger.info(f"Timeout: Created alarm {alarm_id} for {hour:02d}:{minute:02d} with sound {sound}")
+        await decky.emit("timeout_alarm_created", alarm_data)
         await self._emit_all_alarms()
         # Update sleep inhibitor
         await self._update_sleep_inhibitor()
@@ -802,8 +802,8 @@ class Plugin:
         if alarm_id in alarms:
             del alarms[alarm_id]
             await self._save_alarms(alarms)
-            decky.logger.info(f"AlarMe: Deleted alarm {alarm_id}")
-            await decky.emit("alarme_alarm_deleted", alarm_id)
+            decky.logger.info(f"Timeout: Deleted alarm {alarm_id}")
+            await decky.emit("timeout_alarm_deleted", alarm_id)
             await self._emit_all_alarms()
             # Update sleep inhibitor
             await self._update_sleep_inhibitor()
@@ -817,7 +817,7 @@ class Plugin:
             alarms[alarm_id]["enabled"] = enabled
             alarms[alarm_id]["snoozed_until"] = None  # Clear snooze when toggling
             await self._save_alarms(alarms)
-            await decky.emit("alarme_alarm_updated", alarms[alarm_id])
+            await decky.emit("timeout_alarm_updated", alarms[alarm_id])
             await self._emit_all_alarms()
             # Update sleep inhibitor
             await self._update_sleep_inhibitor()
@@ -864,13 +864,13 @@ class Plugin:
             alarm["last_triggered"] = None
             
             await self._save_alarms(alarms)
-            decky.logger.info(f"AlarMe: Updated alarm {alarm_id} to {hour:02d}:{minute:02d}, recurring={recurring}, sound={sound}")
-            await decky.emit("alarme_alarm_updated", alarm)
+            decky.logger.info(f"Timeout: Updated alarm {alarm_id} to {hour:02d}:{minute:02d}, recurring={recurring}, sound={sound}")
+            await decky.emit("timeout_alarm_updated", alarm)
             await self._emit_all_alarms()
             # Update sleep inhibitor
             await self._update_sleep_inhibitor()
             return True
-        decky.logger.warning(f"AlarMe: Update failed - alarm {alarm_id} not found")
+        decky.logger.warning(f"Timeout: Update failed - alarm {alarm_id} not found")
         return False
 
     async def snooze_alarm(self, alarm_id: str, minutes: int = None) -> bool:
@@ -890,9 +890,9 @@ class Plugin:
             await self._save_alarms(alarms)
             
             snooze_dt = datetime.fromtimestamp(snooze_time)
-            decky.logger.info(f"AlarMe: Snoozed alarm {alarm_id} for {minutes} minutes until {snooze_dt.strftime('%H:%M:%S')}")
+            decky.logger.info(f"Timeout: Snoozed alarm {alarm_id} for {minutes} minutes until {snooze_dt.strftime('%H:%M:%S')}")
             
-            await decky.emit("alarme_alarm_snoozed", {
+            await decky.emit("timeout_alarm_snoozed", {
                 "id": alarm_id,
                 "snoozed_until": snooze_time,
                 "minutes": minutes
@@ -900,7 +900,7 @@ class Plugin:
             await self._emit_all_alarms()
             await self._update_sleep_inhibitor()
             return True
-        decky.logger.warning(f"AlarMe: Snooze failed - alarm {alarm_id} not found")
+        decky.logger.warning(f"Timeout: Snooze failed - alarm {alarm_id} not found")
         return False
 
     async def get_alarms(self) -> list:
@@ -941,7 +941,7 @@ class Plugin:
                 "snoozed_until": alarm.get("snoozed_until")
             })
         
-        decky.logger.info(f"AlarMe Debug: {debug_info}")
+        decky.logger.info(f"Timeout Debug: {debug_info}")
         return debug_info
 
     async def get_sounds(self) -> list:
@@ -974,9 +974,9 @@ class Plugin:
                             "name": f"★ {os.path.splitext(filename)[0].replace('_', ' ').title()}"
                         })
             
-            decky.logger.info(f"AlarMe: Found {len(sounds)} sound options")
+            decky.logger.info(f"Timeout: Found {len(sounds)} sound options")
         except Exception as e:
-            decky.logger.error(f"AlarMe: Error listing sounds: {e}")
+            decky.logger.error(f"Timeout: Error listing sounds: {e}")
             sounds = [
                 {"filename": "soundless", "name": "🔇 Soundless"},
                 {"filename": "alarm.mp3", "name": "Alarm"}
@@ -985,7 +985,7 @@ class Plugin:
         return sounds
 
     async def import_custom_sounds(self) -> dict:
-        """Sync custom sounds from ~/Music/AlarMe_Sounds.
+        """Sync custom sounds from ~/Music/Timeout_Sounds.
         
         This acts as a sync: copies new/updated files and removes
         sounds that no longer exist in the source folder.
@@ -1001,9 +1001,9 @@ class Plugin:
         }
         
         try:
-            # Source directory: ~/Music/AlarMe_Sounds
+            # Source directory: ~/Music/Timeout_Sounds
             home_dir = os.path.expanduser("~")
-            source_dir = os.path.join(home_dir, "Music", "AlarMe_Sounds")
+            source_dir = os.path.join(home_dir, "Music", "Timeout_Sounds")
             
             if not os.path.exists(source_dir):
                 result["message"] = f"Folder not found: {source_dir}"
@@ -1039,7 +1039,7 @@ class Plugin:
                     dst_path = os.path.join(custom_dir, filename)
                     shutil.copy2(src_path, dst_path)
                     count += 1
-                    decky.logger.info(f"Alarme: Imported sound {filename}")
+                    decky.logger.info(f"Timeout: Imported sound {filename}")
                     
                 except Exception as e:
                     result["errors"].append(f"Error copying {filename}: {str(e)}")
@@ -1054,7 +1054,7 @@ class Plugin:
                                 dst_path = os.path.join(custom_dir, filename)
                                 os.remove(dst_path)
                                 removed_count += 1
-                                decky.logger.info(f"Alarme: Removed sound {filename} (no longer in source)")
+                                decky.logger.info(f"Timeout: Removed sound {filename} (no longer in source)")
                             except Exception as e:
                                 result["errors"].append(f"Error removing {filename}: {str(e)}")
             
@@ -1073,7 +1073,7 @@ class Plugin:
             result["message"] = ". ".join(messages) + "."
                  
         except Exception as e:
-            decky.logger.error(f"Alarme: Import sounds failed: {e}")
+            decky.logger.error(f"Timeout: Import sounds failed: {e}")
             result["message"] = f"Sync failed: {str(e)}"
             
         return result
@@ -1104,7 +1104,7 @@ class Plugin:
         
         if not os.path.exists(file_path):
             result["error"] = f"File not found: {file_path}"
-            decky.logger.error(f"AlarMe: Sound file not found: {file_path}")
+            decky.logger.error(f"Timeout: Sound file not found: {file_path}")
             return result
             
         try:
@@ -1125,11 +1125,11 @@ class Plugin:
             result["success"] = True
             result["data"] = base64.b64encode(audio_data).decode('utf-8')
             result["mime_type"] = mime_type
-            decky.logger.info(f"AlarMe: Loaded sound data for {filename} ({len(audio_data)} bytes)")
+            decky.logger.info(f"Timeout: Loaded sound data for {filename} ({len(audio_data)} bytes)")
             
         except Exception as e:
             result["error"] = str(e)
-            decky.logger.error(f"AlarMe: Failed to load sound data: {e}")
+            decky.logger.error(f"Timeout: Failed to load sound data: {e}")
             
         return result
 
@@ -1159,7 +1159,7 @@ class Plugin:
             file_path = os.path.join(plugin_dir, "dist", filename)
         
         if not os.path.exists(file_path):
-            decky.logger.error(f"AlarMe: Sound file not found: {file_path}")
+            decky.logger.error(f"Timeout: Sound file not found: {file_path}")
             return False
             
         try:
@@ -1173,7 +1173,7 @@ class Plugin:
                 except:
                     pass
             
-            decky.logger.info(f"AlarMe: Attempting to play: {file_path} at volume {vol}")
+            decky.logger.info(f"Timeout: Attempting to play: {file_path} at volume {vol}")
             
             # Play using paplay (non-blocking)
             self._current_sound_process = subprocess.Popen(
@@ -1181,10 +1181,10 @@ class Plugin:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
             )
-            decky.logger.info(f"AlarMe: Started paplay PID {self._current_sound_process.pid}")
+            decky.logger.info(f"Timeout: Started paplay PID {self._current_sound_process.pid}")
             return True
         except Exception as e:
-            decky.logger.error(f"AlarMe: Failed to play sound: {e}")
+            decky.logger.error(f"Timeout: Failed to play sound: {e}")
             return False
 
     async def stop_sound(self) -> bool:
@@ -1194,10 +1194,10 @@ class Plugin:
             if hasattr(self, '_current_sound_process') and self._current_sound_process:
                 self._current_sound_process.terminate()
                 self._current_sound_process = None
-                decky.logger.info("AlarMe: Stopped sound")
+                decky.logger.info("Timeout: Stopped sound")
             return True
         except Exception as e:
-            decky.logger.error(f"AlarMe: Failed to stop sound: {e}")
+            decky.logger.error(f"Timeout: Failed to stop sound: {e}")
             return False
 
     async def debug_sound(self, filename: str) -> dict:
@@ -1229,7 +1229,7 @@ class Plugin:
         
         result["file_exists"] = os.path.exists(result["resolved_path"]) if result["resolved_path"] else False
         
-        decky.logger.info(f"AlarMe Debug: {result}")
+        decky.logger.info(f"Timeout Debug: {result}")
         return result
 
     def _calculate_next_trigger(self, alarm: dict) -> float:
@@ -1307,7 +1307,7 @@ class Plugin:
 
     async def _alarm_checker(self):
         """Background task to check and trigger alarms."""
-        decky.logger.info("AlarMe: Alarm checker started!")
+        decky.logger.info("Timeout: Alarm checker started!")
         check_count = 0
         try:
             while True:
@@ -1325,7 +1325,7 @@ class Plugin:
                     
                     # Only log occasionally to avoid spam (every 60 checks = 1 minute)
                     if check_count % 60 == 1:
-                        decky.logger.info(f"AlarMe: Alarm check heartbeat - {len(alarms)} alarms")
+                        decky.logger.info(f"Timeout: Alarm check heartbeat - {len(alarms)} alarms")
                     
                     for alarm_id, alarm in alarms.items():
                         if not alarm.get("enabled", True):
@@ -1343,7 +1343,7 @@ class Plugin:
                                 # Grace period
                                 if delay > 90:
                                     # Missed!
-                                    decky.logger.info(f"AlarMe: Alarm {alarm_id} missed by {delay:.0f}s")
+                                    decky.logger.info(f"Timeout: Alarm {alarm_id} missed by {delay:.0f}s")
                                     await self._add_missed_item("alarm", alarm_id, alarm.get("label", "Alarm"), next_trigger)
                                     
 
@@ -1359,7 +1359,7 @@ class Plugin:
                                     continue
 
                                 # Triggering (within grace period)
-                                decky.logger.info(f"AlarMe: >>> TRIGGERING alarm {alarm_id}! <<<")
+                                decky.logger.info(f"Timeout: >>> TRIGGERING alarm {alarm_id}! <<<")
                                 
                                 # Get per-alarm settings (no global fallback needed for alarms)
                                 subtle = alarm.get("subtle_mode", False)
@@ -1371,7 +1371,7 @@ class Plugin:
                                 time_format_24h = user_settings.get("time_format_24h", True)
                                 snooze_activation_delay = user_settings.get("snooze_activation_delay", 2.0)
                                 if alarm.get("recurring") == "once":
-                                    decky.logger.info(f"AlarMe: Disabling one-time alarm {alarm_id}")
+                                    decky.logger.info(f"Timeout: Disabling one-time alarm {alarm_id}")
                                     alarms[alarm_id]["enabled"] = False
                                     alarms[alarm_id]["snoozed_until"] = None
                                 else:
@@ -1386,7 +1386,7 @@ class Plugin:
                                 await self._save_alarms(alarms)
                                 await self._emit_all_alarms()
                                 await self._update_sleep_inhibitor()
-                                await decky.emit("alarme_alarm_triggered", {
+                                await decky.emit("timeout_alarm_triggered", {
                                     "id": alarm_id,
                                     "label": alarm.get("label", "Alarm"),
                                     "subtle": subtle,
@@ -1402,12 +1402,12 @@ class Plugin:
                              pass
                 
                 except Exception as e:
-                    decky.logger.error(f"AlarMe: Error in alarm check loop: {e}")
+                    decky.logger.error(f"Timeout: Error in alarm check loop: {e}")
                 
                 await asyncio.sleep(1)  # Check every second for accuracy
                 
         except asyncio.CancelledError:
-            decky.logger.info("AlarMe: Alarm checker stopped")
+            decky.logger.info("Timeout: Alarm checker stopped")
 
     async def _get_alarms(self) -> dict:
         return await self.settings_getSetting(SETTINGS_KEY_ALARMS, {})
@@ -1418,7 +1418,7 @@ class Plugin:
 
     async def _emit_all_alarms(self):
         alarms = await self.get_alarms()
-        await decky.emit("alarme_alarms_updated", alarms)
+        await decky.emit("timeout_alarms_updated", alarms)
 
     # ==================== POMODORO METHODS ====================
 
@@ -1448,12 +1448,12 @@ class Plugin:
         
         self.pomodoro_task = self.loop.create_task(self._pomodoro_handler())
         
-        decky.logger.info(f"AlarMe: Started Pomodoro session {session}")
+        decky.logger.info(f"Timeout: Started Pomodoro session {session}")
         
         # Inject stats for frontend update
         state["stats"] = await self._get_pomodoro_stats()
         
-        await decky.emit("alarme_pomodoro_started", state)
+        await decky.emit("timeout_pomodoro_started", state)
         # Update sleep inhibitor
         await self._update_sleep_inhibitor()
         return state
@@ -1477,7 +1477,7 @@ class Plugin:
                     completed_cycle=is_break and current_state.get("break_type") == "long"
                 )
         except Exception as e:
-            decky.logger.error(f"AlarMe: Failed to update stats on stop: {e}")
+            decky.logger.error(f"Timeout: Failed to update stats on stop: {e}")
 
         state = {
             "active": False,
@@ -1489,12 +1489,12 @@ class Plugin:
         }
         await self._save_pomodoro_state(state)
         
-        decky.logger.info("AlarMe: Stopped Pomodoro")
+        decky.logger.info("Timeout: Stopped Pomodoro")
         
         # Inject stats
         state["stats"] = await self._get_pomodoro_stats()
         
-        await decky.emit("alarme_pomodoro_stopped", state)
+        await decky.emit("timeout_pomodoro_stopped", state)
         # Update sleep inhibitor
         await self._update_sleep_inhibitor()
         return True
@@ -1518,7 +1518,7 @@ class Plugin:
                     completed_cycle=is_break and pomodoro_state.get("break_type") == "long"
                 )
         except Exception as e:
-            decky.logger.error(f"AlarMe: Failed to update stats on skip: {e}")
+            decky.logger.error(f"Timeout: Failed to update stats on skip: {e}")
         
         user_settings = await self._get_user_settings()
         is_break = pomodoro_state.get("is_break", False)
@@ -1580,7 +1580,7 @@ class Plugin:
         # Inject stats for frontend
         state["stats"] = await self._get_pomodoro_stats()
         
-        await decky.emit("alarme_pomodoro_phase_changed", state)
+        await decky.emit("timeout_pomodoro_phase_changed", state)
         return state
 
     async def _get_pomodoro_stats(self) -> dict:
@@ -1746,7 +1746,7 @@ class Plugin:
                     
                     # Check if missed by > 60 seconds
                     if remaining < -60:
-                        decky.logger.info(f"AlarMe: Pomodoro phase missed by {abs(remaining):.0f}s")
+                        decky.logger.info(f"Timeout: Pomodoro phase missed by {abs(remaining):.0f}s")
                         missed_label = f"Pomodoro: {'Break' if is_break else 'Focus Session'} {session}"
                         # Use scheduled end time as due time
                         due_time = state.get("end_time", time.time())
@@ -1763,14 +1763,14 @@ class Plugin:
                                 completed_cycle=is_break and state.get("break_type") == "long"
                             )
                         except Exception as e:
-                            decky.logger.error(f"AlarMe: Stats update error: {e}")
+                            decky.logger.error(f"Timeout: Stats update error: {e}")
 
                         # Reset state to inactive
                         new_state = await self._get_pomodoro_state()
                         new_state["active"] = False
                         new_state["remaining"] = 0
                         await self._save_pomodoro_state(new_state)
-                        await decky.emit("alarme_pomodoro_updated", new_state)
+                        await decky.emit("timeout_pomodoro_updated", new_state)
                         # Update sleep inhibitor
                         await self._update_sleep_inhibitor()
                         return # Exit loop
@@ -1786,7 +1786,7 @@ class Plugin:
                                 completed_cycle=is_break and state.get("break_type") == "long"
                             )
                     except Exception as e:
-                        decky.logger.error(f"AlarMe: Failed to update stats on completion: {e}")
+                        decky.logger.error(f"Timeout: Failed to update stats on completion: {e}")
                     
                     if is_break:
                         # Break finished, start new work session
@@ -1815,7 +1815,7 @@ class Plugin:
                             "subtle_mode": is_subtle,
                             "stats": await self._get_pomodoro_stats()
                         }
-                        await decky.emit("alarme_pomodoro_break_ended", new_state)
+                        await decky.emit("timeout_pomodoro_break_ended", new_state)
                     else:
                         # Work finished, start break
                         sessions_until_long = user_settings.get("pomodoro_sessions_until_long_break", 4)
@@ -1839,13 +1839,13 @@ class Plugin:
                             "subtle_mode": user_settings.get("pomodoro_subtle_mode", False),
                             "stats": await self._get_pomodoro_stats()
                         }
-                        await decky.emit("alarme_pomodoro_work_ended", new_state)
+                        await decky.emit("timeout_pomodoro_work_ended", new_state)
                     
                     await self._save_pomodoro_state(new_state)
-                    decky.logger.info(f"AlarMe: Pomodoro phase changed - is_break={new_state['is_break']}")
+                    decky.logger.info(f"Timeout: Pomodoro phase changed - is_break={new_state['is_break']}")
                 
                 # Emit tick every 5 seconds
-                await decky.emit("alarme_pomodoro_tick", {
+                await decky.emit("timeout_pomodoro_tick", {
                     "remaining": int(max(0, remaining)),
                     "is_break": state.get("is_break", False),
                     "session": state.get("current_session", 1),
@@ -1855,7 +1855,7 @@ class Plugin:
                 await asyncio.sleep(1)  # Update every second for real-time display
                 
         except asyncio.CancelledError:
-            decky.logger.info("AlarMe: Pomodoro handler stopped")
+            decky.logger.info("Timeout: Pomodoro handler stopped")
 
     async def _get_pomodoro_state(self) -> dict:
         return await self.settings_getSetting(SETTINGS_KEY_POMODORO, {
@@ -1897,7 +1897,7 @@ class Plugin:
         user_settings = await self._get_user_settings()
         enabled = user_settings.get("presets_enabled", True)
         if not enabled:
-            decky.logger.warning("AlarMe: Presets are disabled. Cannot save preset.")
+            decky.logger.warning("Timeout: Presets are disabled. Cannot save preset.")
             return None
             
         presets = await self.get_presets()
@@ -1936,21 +1936,21 @@ class Plugin:
         
         # Enforce max limit by keeping only the newest
         if len(presets) > max_visible:
-            decky.logger.info(f"AlarMe: Preset limit reached ({max_visible}). Overwriting oldest preset.")
+            decky.logger.info(f"Timeout: Preset limit reached ({max_visible}). Overwriting oldest preset.")
             presets = presets[:max_visible]
             
         await self.settings_setSetting(SETTINGS_KEY_PRESETS, presets)
         await self.settings_commit()
         
-        decky.logger.info(f"AlarMe: Created preset '{label}' ({seconds}s, subtle={subtle_mode}, suspend={auto_suspend}, prevent_sleep={prevent_sleep})")
-        await decky.emit("alarme_presets_updated", presets)
+        decky.logger.info(f"Timeout: Created preset '{label}' ({seconds}s, subtle={subtle_mode}, suspend={auto_suspend}, prevent_sleep={prevent_sleep})")
+        await decky.emit("timeout_presets_updated", presets)
         return preset
 
     async def save_preset_from_timer(self, timer_id: str) -> dict:
         """Create a preset from an active or paused timer."""
         timers = await self._get_timers()
         if timer_id not in timers:
-            decky.logger.warning(f"AlarMe: Timer {timer_id} not found for preset creation")
+            decky.logger.warning(f"Timeout: Timer {timer_id} not found for preset creation")
             return None
         
         timer = timers[timer_id]
@@ -1970,7 +1970,7 @@ class Plugin:
         await self.settings_setSetting(SETTINGS_KEY_PRESETS, presets)
         await self.settings_commit()
         
-        await decky.emit("alarme_presets_updated", presets)
+        await decky.emit("timeout_presets_updated", presets)
         return True
 
     # ==================== SETTINGS METHODS ====================
@@ -1984,7 +1984,7 @@ class Plugin:
                 plugin_data = json.load(f)
             return plugin_data.get("version", "unknown")
         except Exception as e:
-            decky.logger.error(f"AlarMe: Failed to read plugin version: {e}")
+            decky.logger.error(f"Timeout: Failed to read plugin version: {e}")
             return "unknown"
 
     async def get_settings(self) -> dict:
@@ -2002,10 +2002,10 @@ class Plugin:
             max_visible = new_settings["presets_max_visible"]
             presets = await self.get_presets()
             if len(presets) > max_visible:
-                decky.logger.info(f"AlarMe: Truncating presets list to {max_visible}")
+                decky.logger.info(f"Timeout: Truncating presets list to {max_visible}")
                 presets = presets[:max_visible]
                 await self.settings_setSetting(SETTINGS_KEY_PRESETS, presets)
-                await decky.emit("alarme_presets_updated", presets)
+                await decky.emit("timeout_presets_updated", presets)
         
         # Update sleep inhibitor if prevent_sleep or screensaver settings changed
         if any(k in new_settings for k in ("pomodoro_prevent_sleep", "timer_prevent_sleep")):
@@ -2013,7 +2013,7 @@ class Plugin:
                 
         await self.settings_commit()
         
-        await decky.emit("alarme_settings_updated", current)
+        await decky.emit("timeout_settings_updated", current)
         return current
 
 
@@ -2177,10 +2177,10 @@ class Plugin:
             with open(filepath, 'w') as f:
                 f.write(json_str)
             
-            decky.logger.info(f"AlarMe: Backup exported to {filepath}")
+            decky.logger.info(f"Timeout: Backup exported to {filepath}")
             return True
         except Exception as e:
-            decky.logger.error(f"AlarMe: Export to file failed: {e}")
+            decky.logger.error(f"Timeout: Export to file failed: {e}")
             return False
 
     async def import_backup_from_file(self, filepath: str) -> bool:
@@ -2190,7 +2190,7 @@ class Plugin:
             filepath = os.path.expanduser(filepath)
             
             if not os.path.exists(filepath):
-                decky.logger.error(f"AlarMe: Import file not found: {filepath}")
+                decky.logger.error(f"Timeout: Import file not found: {filepath}")
                 return False
                 
             with open(filepath, 'r') as f:
@@ -2198,7 +2198,7 @@ class Plugin:
                 
             return await self.import_backup(json_str)
         except Exception as e:
-             decky.logger.error(f"AlarMe: Import from file failed: {e}")
+             decky.logger.error(f"Timeout: Import from file failed: {e}")
              return False
 
     async def import_backup(self, json_str: str) -> bool:
@@ -2218,7 +2218,7 @@ class Plugin:
             if "presets" in data:
                 await self.settings_setSetting(SETTINGS_KEY_PRESETS, data["presets"])
                 await self.settings_commit()
-                await decky.emit("alarme_presets_updated", data["presets"])
+                await decky.emit("timeout_presets_updated", data["presets"])
                 
             if "recent_timers" in data:
                 await self.settings_setSetting(SETTINGS_KEY_RECENT_TIMERS, data["recent_timers"])
@@ -2229,15 +2229,15 @@ class Plugin:
                 settings_to_save = {**DEFAULT_SETTINGS, **data["user_settings"]}
                 await self.settings_setSetting(SETTINGS_KEY_SETTINGS, settings_to_save)
                 await self.settings_commit()
-                await decky.emit("alarme_settings_updated", settings_to_save)
+                await decky.emit("timeout_settings_updated", settings_to_save)
             
             # Emit general event so frontend can trigger full refresh
-            await decky.emit("alarme_data_imported", True)
+            await decky.emit("timeout_data_imported", True)
             
-            decky.logger.info("AlarMe: Backup imported successfully")
+            decky.logger.info("Timeout: Backup imported successfully")
             return True
         except Exception as e:
-             decky.logger.error(f"AlarMe: Import failed: {e}")
+             decky.logger.error(f"Timeout: Import failed: {e}")
              return False
 
     async def _get_user_settings(self) -> dict:
@@ -2342,7 +2342,7 @@ class Plugin:
         if changed:
             await self.settings_setSetting(SETTINGS_KEY_SETTINGS, updated)
             await self.settings_commit()
-            decky.logger.info("AlarMe: Migrated overlay settings schema")
+            decky.logger.info("Timeout: Migrated overlay settings schema")
 
     async def _migrate_timer_settings(self):
         """Migrate legacy global timer defaults into per-timer properties."""
@@ -2370,7 +2370,7 @@ class Plugin:
 
         if changed:
             await self._save_timers(timers)
-            decky.logger.info("AlarMe: Migrated timers to per-timer subtle/auto suspend settings")
+            decky.logger.info("Timeout: Migrated timers to per-timer subtle/auto suspend settings")
 
     # ==================== CORE SETTINGS METHODS ====================
 
@@ -2408,7 +2408,7 @@ class Plugin:
     async def set_game_running(self, is_running: bool) -> bool:
         """Update game running state from frontend."""
         self._game_running = is_running
-        decky.logger.info(f"AlarMe: Game running state set to {is_running}")
+        decky.logger.info(f"Timeout: Game running state set to {is_running}")
         return True
 
 
@@ -2501,7 +2501,7 @@ class Plugin:
              if pomodoro.get("end_time"):
                  pomodoro["end_time"] += suspend_duration
                  await self._save_pomodoro_state(pomodoro)
-                 decky.logger.info(f"AlarMe: Pomodoro paused during suspend. Extended by {suspend_duration:.0f}s")
+                 decky.logger.info(f"Timeout: Pomodoro paused during suspend. Extended by {suspend_duration:.0f}s")
                  
                  # Restart the task to respect new end time
                  if hasattr(self, 'pomodoro_task') and self.pomodoro_task:
@@ -2532,13 +2532,13 @@ class Plugin:
              pomodoro["remaining"] = 0
              await self._save_pomodoro_state()
              
-             await decky.emit("alarme_pomodoro_updated", pomodoro)
+             await decky.emit("timeout_pomodoro_updated", pomodoro)
 
     # ==================== LIFECYCLE METHODS ====================
 
     async def _suspend_monitor(self):
         """Monitor for system suspend/resume events via time jumps."""
-        decky.logger.info("AlarMe: Suspend monitor started")
+        decky.logger.info("Timeout: Suspend monitor started")
         self.last_tick = time.time()
         
         while True:
@@ -2549,7 +2549,7 @@ class Plugin:
                 # Check for significant time jump (>5s) indicating suspend
                 if now - self.last_tick > 5:
                     jump_duration = now - self.last_tick
-                    decky.logger.info(f"AlarMe: Suspend detected! Jumped {jump_duration:.1f}s")
+                    decky.logger.info(f"Timeout: Suspend detected! Jumped {jump_duration:.1f}s")
                     
                     user_settings = await self._get_user_settings()
                     
@@ -2583,14 +2583,14 @@ class Plugin:
                         
                         if recent_missed:
                             count = len(recent_missed)
-                            decky.logger.info(f"AlarMe: Emitting missed items: {count}")
-                            await decky.emit("alarme_missed_items_toast", count)
+                            decky.logger.info(f"Timeout: Emitting missed items: {count}")
+                            await decky.emit("timeout_missed_items_toast", count)
 
                 self.last_tick = now
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                decky.logger.error(f"AlarMe: Suspend monitor error: {e}")
+                decky.logger.error(f"Timeout: Suspend monitor error: {e}")
                 await asyncio.sleep(5)
 
     async def _main(self):
@@ -2610,7 +2610,7 @@ class Plugin:
         for timer_id, timer in timers.items():
             remaining = timer["end_time"] - current_time
             if remaining > 0:
-                decky.logger.info(f"AlarMe: Resuming timer {timer_id} with {remaining:.0f}s remaining")
+                decky.logger.info(f"Timeout: Resuming timer {timer_id} with {remaining:.0f}s remaining")
                 self.timer_tasks[timer_id] = self.loop.create_task(
                     self._timer_handler(timer_id, timer["end_time"], timer.get("label", "Timer"))
                 )
@@ -2627,7 +2627,7 @@ class Plugin:
         pomodoro = await self._get_pomodoro_state()
         if pomodoro.get("active") and pomodoro.get("end_time"):
             if pomodoro["end_time"] > current_time:
-                decky.logger.info("AlarMe: Resuming Pomodoro session")
+                decky.logger.info("Timeout: Resuming Pomodoro session")
                 self.pomodoro_task = self.loop.create_task(self._pomodoro_handler())
         
         # Start alarm checker
@@ -2639,12 +2639,12 @@ class Plugin:
         # Check and activate sleep inhibitor if any alerts require it
         await self._update_sleep_inhibitor()
         
-        decky.logger.info("AlarMe: Plugin initialized successfully")
+        decky.logger.info("Timeout: Plugin initialized successfully")
 
     async def factory_reset(self) -> bool:
         """Factory reset - restore all settings to defaults and clear all data."""
         try:
-            decky.logger.info("AlarMe: Starting factory reset...")
+            decky.logger.info("Timeout: Starting factory reset...")
             
             # 1. Cancel all active timer tasks
             for timer_id, task in list(self.timer_tasks.items()):
@@ -2702,27 +2702,27 @@ class Plugin:
             await self.settings_commit()
             
             # 9. Emit update events to frontend
-            await decky.emit("alarme_settings_updated", DEFAULT_SETTINGS)
-            await decky.emit("alarme_alarms_updated", [])
-            await decky.emit("alarme_timers_updated", [])
-            await decky.emit("alarme_pomodoro_updated", {
+            await decky.emit("timeout_settings_updated", DEFAULT_SETTINGS)
+            await decky.emit("timeout_alarms_updated", [])
+            await decky.emit("timeout_timers_updated", [])
+            await decky.emit("timeout_pomodoro_updated", {
                 "active": False,
                 "is_break": False,
                 "current_session": 1,
                 "end_time": None,
                 "duration": 0
             })
-            await decky.emit("alarme_missed_items_updated", [])
+            await decky.emit("timeout_missed_items_updated", [])
             
             # 10. Restart background tasks
             self.alarm_check_task = self.loop.create_task(self._alarm_checker())
             self.suspend_monitor_task = self.loop.create_task(self._suspend_monitor())
             
-            decky.logger.info("AlarMe: Factory reset completed successfully")
+            decky.logger.info("Timeout: Factory reset completed successfully")
             return True
             
         except Exception as e:
-            decky.logger.error(f"AlarMe: Factory reset failed: {e}")
+            decky.logger.error(f"Timeout: Factory reset failed: {e}")
             return False
 
     async def _unload(self):
@@ -2744,20 +2744,12 @@ class Plugin:
         if self.suspend_monitor_task:
             self.suspend_monitor_task.cancel()
         
-        decky.logger.info("AlarMe: Plugin unloaded")
+        decky.logger.info("Timeout: Plugin unloaded")
 
     async def _uninstall(self):
         """Plugin uninstall cleanup."""
-        decky.logger.info("AlarMe: Plugin uninstalled")
+        decky.logger.info("Timeout: Plugin uninstalled")
 
     async def _migration(self):
         """Plugin migration."""
-        decky.logger.info("AlarMe: Running migration")
-        
-        decky.migrate_logs(os.path.join(decky.DECKY_USER_HOME, ".config", "alarme", "plugin.log"))
-        decky.migrate_settings(
-            os.path.join(decky.DECKY_HOME, "settings", "alarme.json"),
-            os.path.join(decky.DECKY_USER_HOME, ".config", "alarme"))
-        decky.migrate_runtime(
-            os.path.join(decky.DECKY_HOME, "alarme"),
-            os.path.join(decky.DECKY_USER_HOME, ".local", "share", "alarme"))
+        decky.logger.info("Timeout: first run (no legacy data to migrate)")

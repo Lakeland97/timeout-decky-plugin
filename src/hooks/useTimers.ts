@@ -106,16 +106,16 @@ export function useTimers() {
             ));
         };
 
-        addEventListener('alarme_timers_updated', handleTimersUpdated);
-        addEventListener('alarme_timer_tick', handleTimerTick);
+        addEventListener('timeout_timers_updated', handleTimersUpdated);
+        addEventListener('timeout_timer_tick', handleTimerTick);
 
         // Load initial data
         loadTimers();
         loadRecentTimers();
 
         return () => {
-            removeEventListener('alarme_timers_updated', handleTimersUpdated);
-            removeEventListener('alarme_timer_tick', handleTimerTick);
+            removeEventListener('timeout_timers_updated', handleTimersUpdated);
+            removeEventListener('timeout_timer_tick', handleTimerTick);
         };
     }, [loadTimers, loadRecentTimers]);
 

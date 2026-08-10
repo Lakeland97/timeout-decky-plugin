@@ -1,5 +1,5 @@
 /**
- * Centralized z-index orchestration for AlarMe overlays.
+ * Centralized z-index orchestration for Timeout overlays.
  *
  * Layering rules (from bottom to top):
  *  - Game / app window:        rendered by gamescope (no CSS z-index)
