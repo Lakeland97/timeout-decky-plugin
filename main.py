@@ -21,16 +21,13 @@ settings = SettingsManager(name="settings", settings_directory=settingsDir)
 settings.read()
 
 # Settings keys
-SETTINGS_KEY_ALARMS = "alarms"
 SETTINGS_KEY_SETTINGS = "user_settings"
 SETTINGS_KEY_POMODORO = "pomodoro_state"
 
 # Limits to prevent excessive data
-MAX_ALARMS = 100
 
 # Default user settings
 DEFAULT_SETTINGS = {
-    "snooze_duration": 5,  # default minutes for alarm snooze
     "time_format_24h": True,
     # Pomodoro settings
     "pomodoro_sound": "alarm.mp3",
@@ -45,8 +42,6 @@ DEFAULT_SETTINGS = {
     "missed_alerts_enabled": True,
     "missed_alerts_window": 24,
     "pomodoro_suspend_behavior": "continue",
-    # Display settings
-    "snooze_activation_delay": 2.0,
     # Overlay settings
     "overlay_enabled": False,
     "overlay_display_mode": "both",
@@ -67,7 +62,6 @@ DEFAULT_SETTINGS = {
 }
 
 class Plugin:
-    alarm_check_task = None
     pomodoro_task = None
     suspend_monitor_task = None
     _game_running: bool = False  # Track game state from frontend
@@ -143,7 +137,6 @@ class Plugin:
         should_inhibit = False
         reason_parts = []
         inhibiting_items = []
-        alarm_count = 0
 
 
         # Pomodoro flagged prevent_sleep
@@ -154,22 +147,7 @@ class Plugin:
             reason_parts.append("Focus")
             inhibiting_items.append({"type": "pomodoro", "id": "pomodoro", "label": "Focus"})
 
-        # Alarms flagged prevent_sleep (within their configured wake window)
-        alarms = await self._get_alarms()
-        now = time.time()
-        for alarm_id, alarm in alarms.items():
-            if not alarm.get("enabled", False) or not alarm.get("prevent_sleep", False):
-                continue
-            window_minutes = alarm.get("prevent_sleep_window", 60)
-            window_seconds = window_minutes * 60
-            next_trigger = self._calculate_next_trigger(alarm)
-            if next_trigger and 0 < (next_trigger - now) <= window_seconds:
-                should_inhibit = True
-                alarm_count += 1
-                inhibiting_items.append({"type": "alarm", "id": alarm_id, "label": alarm.get("label", "Alarm")})
 
-        if alarm_count > 0:
-            reason_parts.append(f"{alarm_count} alarm(s)")
 
         if should_inhibit:
             reason = "Timeout: " + ", ".join(reason_parts) + " active"
@@ -329,17 +307,6 @@ class Plugin:
                 user_settings.get("pomodoro_prevent_sleep", False)):
             inhibiting_items.append({"type": "pomodoro", "id": "pomodoro", "label": "Focus"})
 
-        alarms = await self._get_alarms()
-        now = time.time()
-        for alarm_id, alarm in alarms.items():
-            if (not alarm.get("enabled", False) or
-                    not alarm.get("prevent_sleep", False)):
-                continue
-            window_minutes = alarm.get("prevent_sleep_window", 60)
-            window_seconds = window_minutes * 60
-            next_trigger = self._calculate_next_trigger(alarm)
-            if next_trigger and 0 < (next_trigger - now) <= window_seconds:
-                inhibiting_items.append({"type": "alarm", "id": alarm_id, "label": alarm.get("label", "Alarm")})
 
         return {
             "active": self._sleep_inhibitor_active,
@@ -356,13 +323,6 @@ class Plugin:
         if pomodoro.get("active", False):
             await self.stop_pomodoro()
 
-        # Turn off all alarms that are preventing sleep
-        alarms = await self._get_alarms()
-        for alarm_id, alarm in alarms.items():
-            if alarm.get("prevent_sleep", False) and alarm.get("enabled", False):
-                alarm["enabled"] = False
-        await self._save_alarms(alarms)
-        await decky.emit("timeout_alarms_updated", list(alarms.values()))
 
         await self._update_sleep_inhibitor()
 
@@ -376,217 +336,6 @@ class Plugin:
 
 
 
-
-    # ==================== ALARM METHODS ====================
-
-    async def create_alarm(self, hour: int, minute: int, label: str = "", 
-                          recurring: str = "once", sound: str = "alarm.mp3",
-                          volume: int = 100, subtle_mode: bool = False, 
-                          auto_suspend: bool = False,
-                          prevent_sleep: bool = False,
-                          prevent_sleep_window: int = 60) -> str:
-        """
-        Create a new alarm.
-        recurring: 'once', 'daily', 'weekdays', 'weekends', or comma-separated days (0-6, 0=Monday)
-        sound: filename of the sound to play (from assets folder)
-        volume: 0-100 alarm volume
-        subtle_mode: if True, show only a toast notification
-        auto_suspend: if True, suspend device after alarm
-        prevent_sleep: if True, keep device awake while alarm is upcoming
-        prevent_sleep_window: minutes before alarm to start preventing sleep
-        """
-        # Check limit
-        alarms = await self._get_alarms()
-        if len(alarms) >= MAX_ALARMS:
-            decky.logger.warning(f"Timeout: Alarm limit reached ({MAX_ALARMS})")
-            return None
-        
-        alarm_id = str(uuid.uuid4())[:8]
-        
-        if not label:
-            user_settings = await self._get_user_settings()
-            use24h = user_settings.get("time_format_24h", True)
-            if use24h:
-                label = f"Alarm {hour:02d}:{minute:02d}"
-            else:
-                period = "PM" if hour >= 12 else "AM"
-                display_hour = hour % 12 or 12
-                label = f"Alarm {display_hour}:{minute:02d} {period}"
-
-        alarm_data = {
-            "id": alarm_id,
-            "hour": hour,
-            "minute": minute,
-            "label": label,
-            "recurring": recurring,
-            "enabled": True,
-            "created_at": time.time(),
-            "snoozed_until": None,
-            "sound": sound,
-            "volume": volume,
-            "subtle_mode": subtle_mode,
-            "auto_suspend": auto_suspend,
-            "prevent_sleep": prevent_sleep,
-            "prevent_sleep_window": prevent_sleep_window,
-        }
-        
-        alarms = await self._get_alarms()
-        alarms[alarm_id] = alarm_data
-        await self._save_alarms(alarms)
-        
-        decky.logger.info(f"Timeout: Created alarm {alarm_id} for {hour:02d}:{minute:02d} with sound {sound}")
-        await decky.emit("timeout_alarm_created", alarm_data)
-        await self._emit_all_alarms()
-        # Update sleep inhibitor
-        await self._update_sleep_inhibitor()
-        
-        return alarm_id
-
-    async def cancel_alarm(self, alarm_id: str) -> bool:
-        """Delete an alarm."""
-        alarms = await self._get_alarms()
-        if alarm_id in alarms:
-            del alarms[alarm_id]
-            await self._save_alarms(alarms)
-            decky.logger.info(f"Timeout: Deleted alarm {alarm_id}")
-            await decky.emit("timeout_alarm_deleted", alarm_id)
-            await self._emit_all_alarms()
-            # Update sleep inhibitor
-            await self._update_sleep_inhibitor()
-            return True
-        return False
-
-    async def toggle_alarm(self, alarm_id: str, enabled: bool) -> bool:
-        """Enable or disable an alarm."""
-        alarms = await self._get_alarms()
-        if alarm_id in alarms:
-            alarms[alarm_id]["enabled"] = enabled
-            alarms[alarm_id]["snoozed_until"] = None  # Clear snooze when toggling
-            await self._save_alarms(alarms)
-            await decky.emit("timeout_alarm_updated", alarms[alarm_id])
-            await self._emit_all_alarms()
-            # Update sleep inhibitor
-            await self._update_sleep_inhibitor()
-            return True
-        return False
-
-    async def update_alarm(self, alarm_id: str, hour: int, minute: int, 
-                          label: str = "", recurring: str = "once", 
-                          sound: str = "alarm.mp3", volume: int = 100,
-                          subtle_mode: bool = False,
-                          auto_suspend: bool = False,
-                          prevent_sleep: bool = False,
-                          prevent_sleep_window: int = 60) -> bool:
-        """Update an existing alarm's settings."""
-        alarms = await self._get_alarms()
-        if alarm_id in alarms:
-            alarm = alarms[alarm_id]
-            alarm["hour"] = hour
-            alarm["minute"] = minute
-            if not label:
-                user_settings = await self._get_user_settings()
-                use24h = user_settings.get("time_format_24h", True)
-                if use24h:
-                    label = f"Alarm {hour:02d}:{minute:02d}"
-                else:
-                    period = "PM" if hour >= 12 else "AM"
-                    display_hour = hour % 12 or 12
-                    label = f"Alarm {display_hour}:{minute:02d} {period}"
-            
-            alarm["label"] = label
-            alarm["recurring"] = recurring
-            alarm["sound"] = sound
-            alarm["volume"] = volume
-            alarm["subtle_mode"] = subtle_mode
-            alarm["auto_suspend"] = auto_suspend
-            alarm["prevent_sleep"] = prevent_sleep
-            alarm["prevent_sleep_window"] = prevent_sleep_window
-            # Re-enable alarm when edited (user expects it to be active)
-            alarm["enabled"] = True
-            # Clear snooze and last_triggered when alarm time changes
-            alarm["snoozed_until"] = None
-            alarm["last_triggered"] = None
-            
-            await self._save_alarms(alarms)
-            decky.logger.info(f"Timeout: Updated alarm {alarm_id} to {hour:02d}:{minute:02d}, recurring={recurring}, sound={sound}")
-            await decky.emit("timeout_alarm_updated", alarm)
-            await self._emit_all_alarms()
-            # Update sleep inhibitor
-            await self._update_sleep_inhibitor()
-            return True
-        decky.logger.warning(f"Timeout: Update failed - alarm {alarm_id} not found")
-        return False
-
-    async def snooze_alarm(self, alarm_id: str, minutes: int = None) -> bool:
-        """Snooze an alarm for the specified minutes."""
-        alarms = await self._get_alarms()
-        if alarm_id in alarms:
-            alarm = alarms[alarm_id]
-            # Use provided minutes or fall back to global setting
-            if minutes is None:
-                user_settings = await self._get_user_settings()
-                minutes = user_settings.get("snooze_duration", 5)
-            
-            snooze_time = time.time() + (minutes * 60)
-            alarms[alarm_id]["snoozed_until"] = snooze_time
-            # Re-enable the alarm if it was disabled (important for "once" alarms)
-            alarms[alarm_id]["enabled"] = True
-            await self._save_alarms(alarms)
-            
-            snooze_dt = datetime.fromtimestamp(snooze_time)
-            decky.logger.info(f"Timeout: Snoozed alarm {alarm_id} for {minutes} minutes until {snooze_dt.strftime('%H:%M:%S')}")
-            
-            await decky.emit("timeout_alarm_snoozed", {
-                "id": alarm_id,
-                "snoozed_until": snooze_time,
-                "minutes": minutes
-            })
-            await self._emit_all_alarms()
-            await self._update_sleep_inhibitor()
-            return True
-        decky.logger.warning(f"Timeout: Snooze failed - alarm {alarm_id} not found")
-        return False
-
-    async def get_alarms(self) -> list:
-        """Get all alarms."""
-        alarms = await self._get_alarms()
-        alarm_list = list(alarms.values())
-        
-        # Add next trigger time for each alarm
-        for alarm in alarm_list:
-            alarm["next_trigger"] = self._calculate_next_trigger(alarm)
-        
-        return sorted(alarm_list, key=lambda x: x.get("next_trigger") or float('inf'))
-
-    async def debug_alarms(self) -> dict:
-        """Debug endpoint to check alarm state."""
-        now = datetime.now()
-        alarms = await self._get_alarms()
-        debug_info = {
-            "current_time": now.strftime("%Y-%m-%d %H:%M:%S"),
-            "current_timestamp": now.timestamp(),
-            "alarm_count": len(alarms),
-            "alarms": []
-        }
-        
-        for alarm_id, alarm in alarms.items():
-            next_trigger = self._calculate_next_trigger(alarm)
-            trigger_dt = datetime.fromtimestamp(next_trigger) if next_trigger else None
-            
-            debug_info["alarms"].append({
-                "id": alarm_id,
-                "time": f"{alarm.get('hour', 0):02d}:{alarm.get('minute', 0):02d}",
-                "enabled": alarm.get("enabled", True),
-                "recurring": alarm.get("recurring", "once"),
-                "next_trigger_ts": next_trigger,
-                "next_trigger_str": trigger_dt.strftime("%Y-%m-%d %H:%M:%S") if trigger_dt else None,
-                "seconds_until": (next_trigger - now.timestamp()) if next_trigger else None,
-                "last_triggered": alarm.get("last_triggered"),
-                "snoozed_until": alarm.get("snoozed_until")
-            })
-        
-        decky.logger.info(f"Timeout Debug: {debug_info}")
-        return debug_info
 
     async def get_sounds(self) -> list:
         """Get list of available sound files from dist and custom_sounds folders."""
@@ -875,194 +624,6 @@ class Plugin:
         
         decky.logger.info(f"Timeout Debug: {result}")
         return result
-
-    def _calculate_next_trigger(self, alarm: dict) -> float:
-        """Calculate the next trigger time for an alarm."""
-        if not alarm.get("enabled", True):
-            return None
-        
-        # If snoozed, return snooze time (even if in past, so it triggers)
-        if alarm.get("snoozed_until"):
-            return alarm["snoozed_until"]
-        
-        now = datetime.now()
-        target = now.replace(
-            hour=alarm["hour"],
-            minute=alarm["minute"],
-            second=0,
-            microsecond=0
-        )
-        
-        # Check if this alarm was already triggered recently (within 2 minutes)
-        last_triggered = alarm.get("last_triggered", 0)
-        if last_triggered and (now.timestamp() - last_triggered) < 120:
-            # Already triggered, schedule for next occurrence
-            target += timedelta(days=1)
-        
-        recurring = alarm.get("recurring", "once")
-        
-        # For "once" alarms: if target is in the past (with 90s grace), schedule for tomorrow
-        # This handles the case where user sets alarm for 3:30 when it's 3:45 - should be tomorrow
-        if recurring == "once":
-            if target.timestamp() < now.timestamp() - 90:
-                # Target is more than 90s in the past, schedule for tomorrow
-                target += timedelta(days=1)
-            return target.timestamp()
-        
-        elif recurring == "daily":
-            # For daily, if target is in the past, schedule for tomorrow
-            if target.timestamp() < now.timestamp() - 90:
-                target += timedelta(days=1)
-            return target.timestamp()
-        
-        elif recurring == "weekdays":
-            # If target is in the past, move to tomorrow first
-            if target.timestamp() < now.timestamp() - 90:
-                target += timedelta(days=1)
-            # Then find next weekday
-            while target.weekday() >= 5:  # 5=Saturday, 6=Sunday
-                target += timedelta(days=1)
-            return target.timestamp()
-        
-        elif recurring == "weekends":
-            # If target is in the past, move to tomorrow first
-            if target.timestamp() < now.timestamp() - 90:
-                target += timedelta(days=1)
-            # Then find next weekend day
-            while target.weekday() < 5:  # 0-4 are weekdays
-                target += timedelta(days=1)
-            return target.timestamp()
-        
-        else:
-            # Custom days (comma-separated, 0=Monday)
-            # If target is in the past, move to tomorrow first
-            if target.timestamp() < now.timestamp() - 90:
-                target += timedelta(days=1)
-            try:
-                allowed_days = [int(d) for d in recurring.split(",")]
-                for _ in range(7):
-                    if target.weekday() in allowed_days:
-                        return target.timestamp()
-                    target += timedelta(days=1)
-            except:
-                return target.timestamp()
-        
-        return target.timestamp()
-
-    async def _alarm_checker(self):
-        """Background task to check and trigger alarms."""
-        decky.logger.info("Timeout: Alarm checker started!")
-        check_count = 0
-        try:
-            while True:
-                check_count += 1
-                try:
-                    now = datetime.now()
-                    current_time = now.timestamp()
-                    
-                    # Sync with suspend monitor to avoid double-processing during resume
-                    if self.last_tick > 0 and current_time - self.last_tick > 5:
-                        await asyncio.sleep(0.5)
-                        continue
-
-                    alarms = await self._get_alarms()
-                    
-                    # Only log occasionally to avoid spam (every 60 checks = 1 minute)
-                    if check_count % 60 == 1:
-                        decky.logger.info(f"Timeout: Alarm check heartbeat - {len(alarms)} alarms")
-                    
-                    for alarm_id, alarm in alarms.items():
-                        if not alarm.get("enabled", True):
-                            continue
-                        
-                        next_trigger = self._calculate_next_trigger(alarm)
-                        
-                        if next_trigger:
-                            diff = next_trigger - current_time
-                            
-                            if next_trigger <= current_time:
-
-                                delay = current_time - next_trigger
-                                
-                                # Grace period
-                                if delay > 90:
-                                    # Missed!
-                                    decky.logger.info(f"Timeout: Alarm {alarm_id} missed by {delay:.0f}s")
-                                    await self._add_missed_item("alarm", alarm_id, alarm.get("label", "Alarm"), next_trigger)
-                                    
-
-                                    if alarm.get("recurring") == "once":
-                                        alarms[alarm_id]["enabled"] = False
-                                        alarms[alarm_id]["snoozed_until"] = None
-                                    else:
-                                        alarms[alarm_id]["snoozed_until"] = None
-                                        alarms[alarm_id]["last_triggered"] = current_time 
-                                    
-                                    await self._save_alarms(alarms)
-                                    await self._emit_all_alarms()
-                                    continue
-
-                                # Triggering (within grace period)
-                                decky.logger.info(f"Timeout: >>> TRIGGERING alarm {alarm_id}! <<<")
-                                
-                                # Get per-alarm settings (no global fallback needed for alarms)
-                                subtle = alarm.get("subtle_mode", False)
-                                auto_suspend = alarm.get("auto_suspend", False)
-                                alarm_sound = alarm.get("sound", "alarm.mp3")
-                                alarm_volume = alarm.get("volume", 100)
-                                user_settings = await self._get_user_settings()
-                                default_snooze = user_settings.get("snooze_duration", 5)
-                                time_format_24h = user_settings.get("time_format_24h", True)
-                                snooze_activation_delay = user_settings.get("snooze_activation_delay", 2.0)
-                                if alarm.get("recurring") == "once":
-                                    decky.logger.info(f"Timeout: Disabling one-time alarm {alarm_id}")
-                                    alarms[alarm_id]["enabled"] = False
-                                    alarms[alarm_id]["snoozed_until"] = None
-                                else:
-                                    # Check if this was a snooze trigger vs regular trigger
-                                    was_snoozed = alarm.get("snoozed_until") is not None
-                                    alarms[alarm_id]["snoozed_until"] = None
-                                    
-                                    if not was_snoozed:
-                                        # Only set last_triggered for regular triggers, not snooze
-                                        alarms[alarm_id]["last_triggered"] = current_time
-                                
-                                await self._save_alarms(alarms)
-                                await self._emit_all_alarms()
-                                await self._update_sleep_inhibitor()
-                                await decky.emit("timeout_alarm_triggered", {
-                                    "id": alarm_id,
-                                    "label": alarm.get("label", "Alarm"),
-                                    "subtle": subtle,
-                                    "sound": alarm_sound,
-                                    "volume": alarm_volume,
-                                    "snooze_duration": default_snooze,
-                                    "auto_suspend": auto_suspend,
-                                    "time_format_24h": time_format_24h,
-                                    "snooze_activation_delay": snooze_activation_delay
-                                })
-                        else:
-                             # No next trigger
-                             pass
-                
-                except Exception as e:
-                    decky.logger.error(f"Timeout: Error in alarm check loop: {e}")
-                
-                await asyncio.sleep(1)  # Check every second for accuracy
-                
-        except asyncio.CancelledError:
-            decky.logger.info("Timeout: Alarm checker stopped")
-
-    async def _get_alarms(self) -> dict:
-        return await self.settings_getSetting(SETTINGS_KEY_ALARMS, {})
-
-    async def _save_alarms(self, alarms: dict):
-        await self.settings_setSetting(SETTINGS_KEY_ALARMS, alarms)
-        await self.settings_commit()
-
-    async def _emit_all_alarms(self):
-        alarms = await self.get_alarms()
-        await decky.emit("timeout_alarms_updated", alarms)
 
     # ==================== POMODORO METHODS ====================
 
@@ -1581,38 +1142,6 @@ class Plugin:
         sleep_preventing_alerts = []  # Always shown, regardless of filters
         
         
-        # Alarms - always check for sleep-preventing ones
-        alarms = await self._get_alarms()
-        for alarm_id, alarm in alarms.items():
-            if not alarm.get("enabled", True):
-                continue
-            next_trigger = self._calculate_next_trigger(alarm)
-            if not next_trigger:
-                continue
-            # Check if this alarm is currently preventing sleep (within its window)
-            is_preventing = False
-            if alarm.get("prevent_sleep"):
-                window_minutes = alarm.get("prevent_sleep_window", 60)
-                window_seconds = window_minutes * 60
-                if 0 < (next_trigger - now) <= window_seconds:
-                    is_preventing = True
-            
-            if next_trigger <= cutoff or is_preventing:
-                alert = {
-                    "id": f"alarm-{alarm_id}",
-                    "category": "alarm",
-                    "label": alarm.get("label", "Alarm"),
-                    "time": next_trigger,
-                    "remaining": next_trigger - now,
-                    "subtle_mode": alarm.get("subtle_mode", False),
-                    "auto_suspend": alarm.get("auto_suspend", False),
-                    "prevent_sleep": alarm.get("prevent_sleep", False)
-                }
-                if is_preventing:
-                    sleep_preventing_alerts.append(alert)
-                elif user_settings.get("overlay_show_alarms", True):
-                    alerts.append(alert)
-        
         # Pomodoro - always check for sleep-preventing
         pomodoro = await self._get_pomodoro_state()
         if pomodoro.get("active") and pomodoro.get("end_time"):
@@ -1663,11 +1192,10 @@ class Plugin:
         return {"alerts": combined, "settings": overlay_settings}
 
     async def export_backup(self) -> str:
-        """Export user data (alarms, settings) to JSON string."""
+        """Export user data (settings) to JSON string."""
         data = {
             "version": 1,
             "timestamp": time.time(),
-            "alarms": await self._get_alarms(),
             "user_settings": await self._get_user_settings()
         }
         return json.dumps(data, indent=2)
@@ -1722,9 +1250,6 @@ class Plugin:
                 return False
                 
             # Restore components individually if present
-            if "alarms" in data:
-                await self._save_alarms(data["alarms"])
-                await self._emit_all_alarms()
                 
                 
                 
@@ -1888,80 +1413,6 @@ class Plugin:
         return True
 
 
-    async def _check_missed_alarms(self, start_time: float, end_time: float):
-        """Check for alarms missed between start_time and end_time.
-        
-        Alarms within MISS_THRESHOLD_SECONDS of end_time are left for _alarm_checker
-        to handle live, avoiding double-firing on resume.
-        """
-        MISS_THRESHOLD_SECONDS = 90
-        alarms = await self._get_alarms()
-        modified = False
-        
-        for alarm_id, alarm in alarms.items():
-            if not alarm.get("enabled", True):
-                continue
-
-            # Start checking from start_time
-            start_dt = datetime.fromtimestamp(start_time)
-            
-            # Construct candidate for the Start Date
-            candidate = start_dt.replace(
-                hour=alarm["hour"],
-                minute=alarm["minute"],
-                second=0,
-                microsecond=0
-            ) 
-            
-            # If candidate is before start_time, move to next day
-            if candidate.timestamp() < start_time:
-                candidate += timedelta(days=1)
-            
-            # Iterate forward until end_time
-            while candidate.timestamp() < end_time:
-                is_valid = False
-                recurring = alarm.get("recurring", "once")
-                
-                if recurring == "once":
-                    #If 'once' alarm is active, it applies to the first valid time found
-                    is_valid = True
-                
-                elif recurring == "daily":
-                    is_valid = True
-                
-                elif recurring == "weekdays":
-                    if candidate.weekday() < 5: is_valid = True
-                
-                elif recurring == "weekends":
-                    if candidate.weekday() >= 5: is_valid = True
-                
-                else: # Custom
-                    try:
-                         days = [int(d) for d in recurring.split(",")]
-                         if candidate.weekday() in days: is_valid = True
-                    except: pass
-                
-                if is_valid:
-                    candidate_ts = candidate.timestamp()
-                    # Skip alarms within threshold of resume time - let _alarm_checker handle them live
-                    if end_time - candidate_ts < MISS_THRESHOLD_SECONDS:
-                        candidate += timedelta(days=1)
-                        continue
-                    
-                    await self._add_missed_item("alarm", alarm_id, alarm.get("label", "Alarm"), candidate_ts)
-                    
-                    if recurring == "once":
-                        alarms[alarm_id]["enabled"] = False
-                        alarms[alarm_id]["snoozed_until"] = None
-                        modified = True
-                        break
-                
-                candidate += timedelta(days=1)
-                
-        if modified:
-            await self._save_alarms(alarms)
-
-
     async def _check_missed_pomodoro(self, start_time: float, end_time: float):
         """Check for pomodoro session interruptions."""
         pomodoro = await self._get_pomodoro_state()
@@ -2035,8 +1486,6 @@ class Plugin:
                         window_hours = user_settings.get("missed_alerts_window", 24)
                         check_start = max(self.last_tick, now - (window_hours * 3600))
                         
-                        # Run historical checks for Alarms (Always Miss if enabled)
-                        await self._check_missed_alarms(check_start, now)
                         
                         # Run historical checks for Pomodoro ONLY if mode is CONTINUE
                         
@@ -2084,8 +1533,6 @@ class Plugin:
                 decky.logger.info("Timeout: Resuming Pomodoro session")
                 self.pomodoro_task = self.loop.create_task(self._pomodoro_handler())
         
-        # Start alarm checker
-        self.alarm_check_task = self.loop.create_task(self._alarm_checker())
         
         # Start suspend monitor
         self.suspend_monitor_task = self.loop.create_task(self._suspend_monitor())
@@ -2101,10 +1548,6 @@ class Plugin:
             decky.logger.info("Timeout: Starting factory reset...")
             
             
-            # 2. Cancel alarm checker
-            if self.alarm_check_task:
-                self.alarm_check_task.cancel()
-                self.alarm_check_task = None
             
             # 3. Cancel Pomodoro task
             if self.pomodoro_task:
@@ -2120,7 +1563,6 @@ class Plugin:
             await self.settings_setSetting(SETTINGS_KEY_SETTINGS, DEFAULT_SETTINGS)
             
             # 6. Clear all data keys
-            await self.settings_setSetting(SETTINGS_KEY_ALARMS, {})
             await self.settings_setSetting(SETTINGS_KEY_POMODORO, {
                 "active": False,
                 "is_break": False,
@@ -2151,7 +1593,6 @@ class Plugin:
             
             # 9. Emit update events to frontend
             await decky.emit("timeout_settings_updated", DEFAULT_SETTINGS)
-            await decky.emit("timeout_alarms_updated", [])
             await decky.emit("timeout_pomodoro_updated", {
                 "active": False,
                 "is_break": False,
@@ -2162,7 +1603,6 @@ class Plugin:
             await decky.emit("timeout_missed_items_updated", [])
             
             # 10. Restart background tasks
-            self.alarm_check_task = self.loop.create_task(self._alarm_checker())
             self.suspend_monitor_task = self.loop.create_task(self._suspend_monitor())
             
             decky.logger.info("Timeout: Factory reset completed successfully")
@@ -2175,9 +1615,6 @@ class Plugin:
     async def _unload(self):
         """Plugin unload cleanup."""
         
-        # Cancel alarm checker
-        if self.alarm_check_task:
-            self.alarm_check_task.cancel()
         
         # Cancel Pomodoro
         if self.pomodoro_task:
