@@ -11,26 +11,6 @@ import uuid
 import json
 import fcntl
 import struct
-import ssl
-
-# SSL context that doesn't verify certificates (Steam Deck Python may lack CA bundles)
-_NO_VERIFY_SSL = ssl.create_default_context()
-_NO_VERIFY_SSL.check_hostname = False
-_NO_VERIFY_SSL.verify_mode = ssl.CERT_NONE
-
-# Browser-like User-Agent for all HTTP requests
-_BROWSER_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-
-_WALLPAPER_POOL_MAX = 20
-
-
-def _http_get_bytes(url: str, timeout: int = 20) -> bytes:
-    import urllib.request
-
-    req = urllib.request.Request(url, headers={"User-Agent": _BROWSER_UA})
-    with urllib.request.urlopen(req, timeout=timeout, context=_NO_VERIFY_SSL) as resp:
-        return resp.read()
-
 
 # Initialize settings
 settingsDir = os.environ["DECKY_PLUGIN_SETTINGS_DIR"]
@@ -39,67 +19,6 @@ decky.logger.info(f'AlarMe: Settings path = {os.path.join(settingsDir, "settings
 decky.logger.info(f"AlarMe: Runtime data path = {runtimeDir}")
 settings = SettingsManager(name="settings", settings_directory=settingsDir)
 settings.read()
-
-
-def _wallpaper_cache_dir() -> str:
-    d = os.path.join(runtimeDir, "wallpaper_cache")
-    os.makedirs(d, exist_ok=True)
-    return d
-
-
-def _weather_cache_path() -> str:
-    return os.path.join(_wallpaper_cache_dir(), "weather_cache.json")
-
-
-def _wallpaper_meta_sidecar_path(image_path: str) -> str:
-    base, _ext = os.path.splitext(image_path)
-    return base + ".json"
-
-
-def _wallpaper_write_meta(image_path: str, title: str | None, credit: str | None) -> None:
-    t = (title or "").strip()
-    c = (credit or "").strip()
-    if not t and not c:
-        return
-    try:
-        p = _wallpaper_meta_sidecar_path(image_path)
-        with open(p, "w", encoding="utf-8") as f:
-            json.dump({"title": t, "credit": c}, f, indent=0)
-    except OSError as e:
-        decky.logger.debug(f"AlarMe: wallpaper meta write failed: {e}")
-
-
-def _wallpaper_read_meta(image_path: str) -> dict | None:
-    p = _wallpaper_meta_sidecar_path(image_path)
-    if not os.path.isfile(p):
-        return None
-    try:
-        with open(p, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return None
-
-
-def _merge_wallpaper_attribution_into_result(result: dict, image_path: str | None) -> None:
-    if not image_path:
-        return
-    m = _wallpaper_read_meta(image_path)
-    if not m:
-        return
-    t = (m.get("title") or "").strip()
-    c = (m.get("credit") or "").strip()
-    if t or c:
-        result["attribution"] = {"title": t or None, "credit": c or None}
-
-
-def _local_wallpapers_dir() -> str:
-    d = os.path.join(runtimeDir, "wallpapers")
-    os.makedirs(d, exist_ok=True)
-    return d
-
-
-def _legacy_settings_wallpapers_dir() -> str:
-    return os.path.join(settingsDir, "wallpapers")
 
 # Settings keys
 SETTINGS_KEY_TIMERS = "active_timers"
@@ -168,59 +87,7 @@ DEFAULT_SETTINGS = {
     "presets_enabled": True,
     "presets_max_visible": 5,
     # Tab Order
-    "tab_order": ["timers", "alarms", "pomodoro", "reminders", "stopwatch"],
-    # Screensaver settings
-        "screensaver_mode": "dim",           # "off" | "black" | "dim" | "wallpaper" — global default
-    "screensaver_dim_opacity": 0.92,     # opacity of the dim overlay (0.0–1.0)
-    "pomodoro_screensaver_mode": "off",  # pomodoro screensaver mode
-    # Screensaver timer
-    "screensaver_idle_seconds": 15,      # seconds idle before screensaver kicks in
-    # Overlay during screensaver
-    "overlay_during_screensaver": True,  # show GameOverlay above screensaver
-    # Overlay extra info during screensaver
-    "overlay_screensaver_show_clock": True,
-    "overlay_screensaver_show_date": True,
-    "overlay_screensaver_show_battery": True,
-    # Screensaver 2.0 settings
-    "screensaver_standalone_enabled": False,
-    "screensaver_standalone_idle_seconds": 60,
-    "overlay_screensaver_layout": "compact",
-    "screensaver_clock_style": "digital",
-    "screensaver_clock_size": 20,
-    "screensaver_accent_color": "muted_gray",
-    "screensaver_show_day_of_week": True,
-    "screensaver_show_year": False,
-    "screensaver_show_calendar_grid": False,
-    "screensaver_battery_show_bar": False,
-    "screensaver_battery_low_threshold": 20,
-    "screensaver_show_alerts_list": True,
-    "screensaver_show_system_stats": False,
-    "screensaver_show_network_info": False,
-    "screensaver_wallpaper_provider": "picsum",
-    "screensaver_wallpaper_fit": "cover",
-    "screensaver_wallpaper_blur": "none",
-    "screensaver_wallpaper_dim": 0.4,
-    "screensaver_wallpaper_interval": 300,
-    "screensaver_wallpaper_pool_size": 5,
-    "screensaver_wallpaper_auto_rotate": True,
-    "screensaver_wallpaper_cache_updated_at": None,
-    "screensaver_wallpaper_shift_local": False,
-    "screensaver_show_weather": False,
-    "screensaver_weather_lat": None,
-    "screensaver_weather_lon": None,
-    "screensaver_weather_city_name": None,
-    "screensaver_weather_unit": "C",
-    "screensaver_weather_show_highlow": True,
-    "screensaver_weather_show_condition": True,
-    "screensaver_weather_refresh_minutes": 30,
-    "screensaver_weather_location_source": None,
-    "screensaver_nasa_api_key": "",
-    "screensaver_wallpaper_show_attribution": True,
-    "screensaver_floating_drift_range": 40,
-    # Pixel shift for OLED burn-in prevention
-    "pixel_shift_enabled": True,
-    "pixel_shift_range": 3,          # max pixel displacement (1-10)
-    "pixel_shift_interval_seconds": 60  # seconds between shifts
+    "tab_order": ["timers", "alarms", "pomodoro", "reminders", "stopwatch"]
 }
 
 # Default presets
@@ -309,52 +176,35 @@ class Plugin:
 
     # ==================== SLEEP INHIBITOR METHODS ====================
 
-    def _compute_effective_screensaver_mode(self, user_settings: dict) -> str:
-        """Return the global screensaver mode. Per-alert modes are no longer used."""
-        return user_settings.get("screensaver_mode", "off")
-
     async def _update_sleep_inhibitor(self):
-        """Update the sleep inhibitor based on per-item prevent_sleep flags.
-        Per-alert screensaver_mode determines whether that alert contributes to the screensaver.
-        The global screensaver_mode determines the visual behavior."""
+        """Update the sleep inhibitor based on per-item prevent_sleep flags."""
         should_inhibit = False
         reason_parts = []
         inhibiting_items = []
         timer_count = 0
         alarm_count = 0
-        reminder_count = 0
-        
-        user_settings = await self._get_user_settings()
-        global_mode = user_settings.get("screensaver_mode", "off")
-        
-        # Check timers with prevent_sleep=True AND screensaver_mode != "off"
+
+        # Timers flagged prevent_sleep keep the Deck awake
         timers = await self._get_timers()
         for timer_id, timer in timers.items():
             if not timer.get("paused", False) and timer.get("prevent_sleep", False):
                 should_inhibit = True
-                mode = timer.get("screensaver_mode", "off")
-                # Only include if screensaver is enabled for this timer
-                if mode != "off":
-                    timer_count += 1
-                    inhibiting_items.append({"type": "timer", "id": timer_id, "label": timer.get("label", "Timer"), "screensaver_mode": global_mode})
-        
-        # Check pomodoro with prevent_sleep=True AND screensaver enabled
+                timer_count += 1
+                inhibiting_items.append({"type": "timer", "id": timer_id, "label": timer.get("label", "Timer")})
+
+        # Pomodoro flagged prevent_sleep
+        user_settings = await self._get_user_settings()
         pomodoro = await self._get_pomodoro_state()
         if pomodoro.get("active", False) and user_settings.get("pomodoro_prevent_sleep", False):
             should_inhibit = True
-            pomo_mode = user_settings.get("pomodoro_screensaver_mode", "off")
-            if pomo_mode != "off":
-                reason_parts.append("Pomodoro")
-                inhibiting_items.append({"type": "pomodoro", "id": "pomodoro", "label": "Pomodoro", "screensaver_mode": global_mode})
-        
-        # Check alarms with prevent_sleep=True AND screensaver enabled
+            reason_parts.append("Focus")
+            inhibiting_items.append({"type": "pomodoro", "id": "pomodoro", "label": "Focus"})
+
+        # Alarms flagged prevent_sleep (within their configured wake window)
         alarms = await self._get_alarms()
         now = time.time()
         for alarm_id, alarm in alarms.items():
             if not alarm.get("enabled", False) or not alarm.get("prevent_sleep", False):
-                continue
-            alarm_mode = alarm.get("screensaver_mode", "off")
-            if alarm_mode == "off":
                 continue
             window_minutes = alarm.get("prevent_sleep_window", 60)
             window_seconds = window_minutes * 60
@@ -362,54 +212,24 @@ class Plugin:
             if next_trigger and 0 < (next_trigger - now) <= window_seconds:
                 should_inhibit = True
                 alarm_count += 1
-                inhibiting_items.append({"type": "alarm", "id": alarm_id, "label": alarm.get("label", "Alarm"), "screensaver_mode": global_mode})
-        
-        # Check reminders with prevent_sleep=True AND screensaver enabled
-        reminders = await self._get_reminders()
-        for reminder_id, reminder in reminders.items():
-            if reminder.get("enabled", False) and reminder.get("prevent_sleep", False):
-                should_inhibit = True
-                rem_mode = reminder.get("screensaver_mode", "off")
-                if rem_mode != "off":
-                    reminder_count += 1
-                    inhibiting_items.append({"type": "reminder", "id": reminder_id, "label": reminder.get("label", "Reminder"), "screensaver_mode": global_mode})
-        
-        # Check stopwatch with prevent_sleep=True AND screensaver enabled
-        stopwatch = await self._get_stopwatch_state()
-        if stopwatch.get("status") == "running" and stopwatch.get("prevent_sleep", False):
-            should_inhibit = True
-            sw_mode = stopwatch.get("screensaver_mode", "off")
-            if sw_mode != "off":
-                reason_parts.append("Stopwatch")
-                inhibiting_items.append({"type": "stopwatch", "id": "stopwatch", "label": "Stopwatch", "screensaver_mode": global_mode})
-        
-        # Build reason string
+                inhibiting_items.append({"type": "alarm", "id": alarm_id, "label": alarm.get("label", "Alarm")})
+
         if timer_count > 0:
             reason_parts.insert(0, f"{timer_count} timer(s)")
         if alarm_count > 0:
             reason_parts.append(f"{alarm_count} alarm(s)")
-        if reminder_count > 0:
-            reason_parts.append(f"{reminder_count} reminder(s)")
-        
-        dim_opacity = user_settings.get("screensaver_dim_opacity", 0.92)
-        idle_seconds = user_settings.get("screensaver_idle_seconds", 15)
-        overlay_during = user_settings.get("overlay_during_screensaver", True)
-        
+
         if should_inhibit:
             reason = "AlarMe: " + ", ".join(reason_parts) + " active"
             await self._acquire_sleep_inhibitor(reason)
             await decky.emit("alarme_sleep_inhibitor_updated", {
                 "active": True,
                 "reason": reason,
-                "items": inhibiting_items,
-                "screensaver_mode": global_mode,
-                "screensaver_dim_opacity": dim_opacity,
-                "screensaver_idle_seconds": idle_seconds,
-                "overlay_during_screensaver": overlay_during
+                "items": inhibiting_items
             })
         else:
             await self._release_sleep_inhibitor()
-            # Do NOT emit a second event — _release_sleep_inhibitor already emits one
+            # _release_sleep_inhibitor emits the inactive event
 
     async def _jiggler_loop(self):
         """Simulate activity periodically to prevent sleep using uinput keyboard events."""
@@ -498,12 +318,9 @@ class Plugin:
                 self._sleep_inhibitor_active = True
                 self._jiggler_task = self.loop.create_task(self._jiggler_loop())
                 decky.logger.info(f"AlarMe: Sleep inhibitor active - {reason}")
-                user_settings = await self._get_user_settings()
                 await decky.emit("alarme_sleep_inhibitor_updated", {
                     "active": True,
-                    "reason": reason,
-                    "screensaver_mode": user_settings.get("screensaver_mode", "off"),
-                    "screensaver_dim_opacity": user_settings.get("screensaver_dim_opacity", 0.92)
+                    "reason": reason
                 })
         except Exception as e:
             decky.logger.error(f"AlarMe: Failed to acquire sleep inhibitor: {e}")
@@ -532,15 +349,10 @@ class Plugin:
                 
             self._sleep_inhibitor_active = False
             decky.logger.info("AlarMe: Sleep inhibitor released")
-            user_settings = await self._get_user_settings()
             await decky.emit("alarme_sleep_inhibitor_updated", {
                 "active": False,
                 "reason": "",
-                "items": [],
-                "screensaver_mode": user_settings.get("screensaver_mode", "off"),
-                "screensaver_dim_opacity": user_settings.get("screensaver_dim_opacity", 0.92),
-                "screensaver_idle_seconds": user_settings.get("screensaver_idle_seconds", 15),
-                "overlay_during_screensaver": user_settings.get("overlay_during_screensaver", True)
+                "items": []
             })
         except Exception as e:
             decky.logger.error(f"AlarMe: Failed to release sleep inhibitor: {e}")
@@ -555,87 +367,53 @@ class Plugin:
             self._sleep_inhibitor_active = False
 
     async def get_sleep_inhibitor_status(self) -> dict:
-        """Get current sleep inhibitor status. Only items with screensaver_mode != 'off' are included."""
+        """Items currently flagged to prevent sleep."""
         inhibiting_items = []
-        
-        user_settings = await self._get_user_settings()
-        global_mode = user_settings.get("screensaver_mode", "off")
-        
-        # Collect all items that are preventing sleep AND have screensaver enabled
+
         timers = await self._get_timers()
         for timer_id, timer in timers.items():
-            if (not timer.get("paused", False) and 
-                timer.get("prevent_sleep", False) and 
-                timer.get("screensaver_mode", "off") != "off"):
-                inhibiting_items.append({"type": "timer", "id": timer_id, "label": timer.get("label", "Timer"), "screensaver_mode": global_mode})
-        
+            if (not timer.get("paused", False) and
+                    timer.get("prevent_sleep", False)):
+                inhibiting_items.append({"type": "timer", "id": timer_id, "label": timer.get("label", "Timer")})
+
+        user_settings = await self._get_user_settings()
         pomodoro = await self._get_pomodoro_state()
-        if (pomodoro.get("active", False) and 
-            user_settings.get("pomodoro_prevent_sleep", False) and
-            user_settings.get("pomodoro_screensaver_mode", "off") != "off"):
-            inhibiting_items.append({"type": "pomodoro", "id": "pomodoro", "label": "Focus Session", "screensaver_mode": global_mode})
-        
+        if (pomodoro.get("active", False) and
+                user_settings.get("pomodoro_prevent_sleep", False)):
+            inhibiting_items.append({"type": "pomodoro", "id": "pomodoro", "label": "Focus"})
+
         alarms = await self._get_alarms()
         now = time.time()
         for alarm_id, alarm in alarms.items():
-            if (not alarm.get("enabled", False) or 
-                not alarm.get("prevent_sleep", False) or
-                alarm.get("screensaver_mode", "off") == "off"):
+            if (not alarm.get("enabled", False) or
+                    not alarm.get("prevent_sleep", False)):
                 continue
             window_minutes = alarm.get("prevent_sleep_window", 60)
             window_seconds = window_minutes * 60
             next_trigger = self._calculate_next_trigger(alarm)
             if next_trigger and 0 < (next_trigger - now) <= window_seconds:
-                inhibiting_items.append({"type": "alarm", "id": alarm_id, "label": alarm.get("label", "Alarm"), "screensaver_mode": global_mode})
-        
-        reminders = await self._get_reminders()
-        for reminder_id, reminder in reminders.items():
-            if (reminder.get("enabled", False) and 
-                reminder.get("prevent_sleep", False) and
-                reminder.get("screensaver_mode", "off") != "off"):
-                inhibiting_items.append({"type": "reminder", "id": reminder_id, "label": reminder.get("label", "Reminder"), "screensaver_mode": global_mode})
-        
-        stopwatch = await self._get_stopwatch_state()
-        if (stopwatch.get("status") == "running" and 
-            stopwatch.get("prevent_sleep", False) and
-            stopwatch.get("screensaver_mode", "off") != "off"):
-            inhibiting_items.append({"type": "stopwatch", "id": "stopwatch", "label": "Stopwatch", "screensaver_mode": global_mode})
-        
+                inhibiting_items.append({"type": "alarm", "id": alarm_id, "label": alarm.get("label", "Alarm")})
+
         return {
             "active": self._sleep_inhibitor_active,
-            "items": inhibiting_items,
-            "screensaver_mode": global_mode,
-            "screensaver_dim_opacity": user_settings.get("screensaver_dim_opacity", 0.92)
+            "items": inhibiting_items
         }
-
-    async def _emit_screensaver_reset_state(self) -> None:
-        """Reset frontend runtime screensaver state after plugin startup."""
-        user_settings = await self._get_user_settings()
-        await decky.emit("alarme_sleep_inhibitor_updated", {
-            "active": False,
-            "reason": "",
-            "items": [],
-            "screensaver_mode": user_settings.get("screensaver_mode", "off"),
-            "screensaver_dim_opacity": user_settings.get("screensaver_dim_opacity", 0.92),
-            "screensaver_idle_seconds": user_settings.get("screensaver_idle_seconds", 15),
-            "overlay_during_screensaver": user_settings.get("overlay_during_screensaver", True),
-        })
 
     async def disable_all_sleep_inhibitors(self) -> bool:
         """Disable all mechanisms preventing sleep."""
         decky.logger.info("AlarMe: Disabling all sleep inhibitors")
-        
+
         # Cancel all timers with prevent_sleep
         timers = await self._get_timers()
         for timer_id, timer in list(timers.items()):
             if timer.get("prevent_sleep", False):
                 await self.cancel_timer(timer_id)
-        
+
         # Stop pomodoro if active
         pomodoro = await self._get_pomodoro_state()
         if pomodoro.get("active", False):
             await self.stop_pomodoro()
-        
+
         # Turn off all alarms that are preventing sleep
         alarms = await self._get_alarms()
         for alarm_id, alarm in alarms.items():
@@ -643,718 +421,19 @@ class Plugin:
                 alarm["enabled"] = False
         await self._save_alarms(alarms)
         await decky.emit("alarme_alarms_updated", list(alarms.values()))
-        
-        # Turn off all reminders that are preventing sleep
-        reminders = await self._get_reminders()
-        for reminder_id, reminder in reminders.items():
-            if reminder.get("prevent_sleep", False) and reminder.get("enabled", False):
-                reminder["enabled"] = False
-        await self._save_reminders(reminders)
-        await decky.emit("alarme_reminders_updated", list(reminders.values()))
-        
-        # Reset stopwatch if running (regardless of prevent_sleep flag, since it's in the inhibitor list)
-        stopwatch = await self._get_stopwatch_state()
-        if stopwatch.get("status") == "running":
-            await self.stopwatch_reset()
-        
-        # Update sleep inhibitor state
+
         await self._update_sleep_inhibitor()
-        
+
         return True
 
-    async def set_screensaver_mode(self, mode: str, dim_opacity: float = None) -> dict:
-        """Update screensaver mode and optionally dim opacity. Emits update if inhibitor is active."""
-        if mode not in ("off", "black", "dim", "wallpaper"):
-            return {"success": False, "error": "Invalid mode"}
-        
-        user_settings = await self._get_user_settings()
-        user_settings["screensaver_mode"] = mode
-        if dim_opacity is not None:
-            user_settings["screensaver_dim_opacity"] = max(0.0, min(1.0, dim_opacity))
-        await self.settings_setSetting(SETTINGS_KEY_SETTINGS, user_settings)
-        await self.settings_commit()
 
-        # If inhibitor is currently active, emit immediately so overlay updates live
-        if self._sleep_inhibitor_active:
-            # Recompute effective mode from all active items
-            await self._update_sleep_inhibitor()
 
-        return {"success": True, "screensaver_mode": mode}
 
-    async def get_screensaver_state(self) -> dict:
-        """Get the current screensaver state for frontend initialization."""
-        user_settings = await self._get_user_settings()
-        return {
-            "screensaver_mode": user_settings.get("screensaver_mode", "off"),
-            "screensaver_dim_opacity": user_settings.get("screensaver_dim_opacity", 0.92),
-            "screensaver_idle_seconds": user_settings.get("screensaver_idle_seconds", 15),
-            "overlay_during_screensaver": user_settings.get("overlay_during_screensaver", True)
-        }
 
-    async def get_system_stats(self) -> dict:
-        """Get real-time system stats from sysfs/proc for the screensaver widget."""
-        result = {
-            "cpu_temp": None,
-            "cpu_usage": None,
-            "ram_used_gb": None,
-            "ram_total_gb": None,
-            "gpu_temp": None,
-            "fan_rpm": None
-        }
 
-        # CPU temperature from thermal zones
-        try:
-            thermal_base = "/sys/class/thermal/thermal_zone"
-            if os.path.exists(thermal_base):
-                for i in range(10):
-                    zone_dir = f"{thermal_base}{i}"
-                    type_file = os.path.join(zone_dir, "type")
-                    temp_file = os.path.join(zone_dir, "temp")
-                    if os.path.exists(type_file) and os.path.exists(temp_file):
-                        with open(type_file, "r") as f:
-                            zone_type = f.read().strip()
-                        with open(temp_file, "r") as f:
-                            temp_raw = f.read().strip()
-                        temp = int(temp_raw) / 1000.0
-                        if zone_type in ("x86_pkg_temp", "cpu-thermal", "Tctl", "k10temp"):
-                            result["cpu_temp"] = temp
-                        elif zone_type in ("gpu", "GPU", "amdgpu", "iwlwifi_1"):
-                            pass  # not GPU temp
-                        elif result["gpu_temp"] is None and temp > 20:
-                            result["gpu_temp"] = temp
-        except Exception as e:
-            decky.logger.debug(f"AlarMe: Error reading temps: {e}")
 
-        # Try GPU temp from hwmon
-        try:
-            hwmon_base = "/sys/class/hwmon"
-            if os.path.exists(hwmon_base):
-                for hwmon_name in os.listdir(hwmon_base):
-                    hwmon_dir = os.path.join(hwmon_base, hwmon_name)
-                    name_file = os.path.join(hwmon_dir, "name")
-                    if os.path.exists(name_file):
-                        with open(name_file, "r") as f:
-                            name = f.read().strip()
-                        for label_idx in range(1, 6):
-                            label_file = os.path.join(hwmon_dir, f"temp{label_idx}_label")
-                            temp_file = os.path.join(hwmon_dir, f"temp{label_idx}_input")
-                            if os.path.exists(label_file) and os.path.exists(temp_file):
-                                with open(label_file, "r") as f:
-                                    label = f.read().strip().lower()
-                                if "gpu" in label or "edge" in label or "junction" in label:
-                                    with open(temp_file, "r") as f:
-                                        result["gpu_temp"] = int(f.read().strip()) / 1000.0
-                                    break
-        except Exception as e:
-            decky.logger.debug(f"AlarMe: Error reading GPU temp: {e}")
 
-        # CPU usage from /proc/stat
-        try:
-            with open("/proc/stat", "r") as f:
-                for line in f:
-                    if line.startswith("cpu "):
-                        parts = line.split()
-                        if len(parts) >= 8:
-                            user = int(parts[1])
-                            nice = int(parts[2])
-                            system = int(parts[3])
-                            idle = int(parts[4])
-                            total = user + nice + system + idle
-                            if total > 0:
-                                result["cpu_usage"] = round((1 - idle / total) * 100, 1)
-                        break
-        except Exception as e:
-            decky.logger.debug(f"AlarMe: Error reading CPU usage: {e}")
 
-        # RAM from /proc/meminfo
-        try:
-            mem_total = 0
-            mem_avail = 0
-            with open("/proc/meminfo", "r") as f:
-                for line in f:
-                    if line.startswith("MemTotal:"):
-                        mem_total = int(line.split()[1])
-                    elif line.startswith("MemAvailable:"):
-                        mem_avail = int(line.split()[1])
-                    if mem_total and mem_avail:
-                        break
-            if mem_total > 0:
-                result["ram_total_gb"] = round(mem_total / 1024 / 1024, 1)
-                result["ram_used_gb"] = round((mem_total - mem_avail) / 1024 / 1024, 1)
-        except Exception as e:
-            decky.logger.debug(f"AlarMe: Error reading RAM: {e}")
-
-        # Fan speed from hwmon
-        try:
-            for hwmon_name in os.listdir(hwmon_base) if os.path.exists("/sys/class/hwmon") else []:
-                hwmon_dir = os.path.join("/sys/class/hwmon", hwmon_name)
-                for fan_idx in range(1, 4):
-                    fan_file = os.path.join(hwmon_dir, f"fan{fan_idx}_input")
-                    if os.path.exists(fan_file):
-                        with open(fan_file, "r") as f:
-                            result["fan_rpm"] = int(f.read().strip())
-                        break
-                if result["fan_rpm"] is not None:
-                    break
-        except Exception as e:
-            decky.logger.debug(f"AlarMe: Error reading fan: {e}")
-
-        return result
-
-    async def _wallpaper_pool_size(self) -> int:
-        user_settings = await self._get_user_settings()
-        try:
-            n = int(user_settings.get("screensaver_wallpaper_pool_size", 5))
-        except (TypeError, ValueError):
-            n = 5
-        return max(1, min(n, _WALLPAPER_POOL_MAX))
-
-    async def _wallpaper_mark_cache_refreshed(self) -> None:
-        user_settings = await self._get_user_settings()
-        user_settings["screensaver_wallpaper_cache_updated_at"] = datetime.now().isoformat(timespec="seconds")
-        await self.settings_setSetting(SETTINGS_KEY_SETTINGS, user_settings)
-        await self.settings_commit()
-        await decky.emit("alarme_settings_updated", user_settings)
-
-    def _nasa_apod_fetch_meta_sync(self, user_settings: dict) -> dict | None:
-        import urllib.parse
-        import urllib.request
-
-        keys_ordered: list[str] = []
-        uk = (user_settings.get("screensaver_nasa_api_key") or "").strip()
-        if uk:
-            keys_ordered.append(uk)
-        if "DEMO_KEY" not in keys_ordered:
-            keys_ordered.append("DEMO_KEY")
-        for k in keys_ordered:
-            try:
-                q = urllib.parse.urlencode({"api_key": k})
-                url = f"https://api.nasa.gov/planetary/apod?{q}"
-                req = urllib.request.Request(url, headers={"User-Agent": _BROWSER_UA})
-                with urllib.request.urlopen(req, timeout=18, context=_NO_VERIFY_SSL) as resp:
-                    meta = json.loads(resp.read().decode("utf-8"))
-                if not isinstance(meta, dict):
-                    continue
-                if meta.get("error") or meta.get("msg"):
-                    decky.logger.debug(f"AlarMe: NASA APOD error payload: {meta}")
-                    continue
-                if meta.get("media_type") and str(meta.get("media_type")).lower() != "image":
-                    return meta
-                if meta.get("url") or meta.get("hdurl"):
-                    return meta
-            except Exception as e:
-                decky.logger.debug(f"AlarMe: NASA APOD request failed: {e}")
-        return None
-
-    async def fetch_wallpaper(self, provider: str, slot: int = 0) -> dict:
-        """Fetch a wallpaper as base64 data for CEF rendering."""
-        import urllib.request
-        import base64
-        import json as json_mod
-
-        result: dict = {
-            "success": False,
-            "url": None,
-            "is_base64": False,
-            "provider_status": None,
-            "last_fetch": None,
-            "attribution": None,
-        }
-        legacy_wallpapers_dir = _legacy_settings_wallpapers_dir()
-        os.makedirs(legacy_wallpapers_dir, exist_ok=True)
-        cache_dir = _wallpaper_cache_dir()
-
-        pool_sz = await self._wallpaper_pool_size()
-        slot_idx = slot % pool_sz if slot >= 0 else 0
-
-        def _cleanup_old_wallpapers(directory: str, prefix: str, keep: int = 3):
-            try:
-                files = [os.path.join(directory, f) for f in os.listdir(directory) if f.startswith(prefix)]
-                files.sort(key=os.path.getmtime, reverse=True)
-                for old_file in files[keep:]:
-                    os.remove(old_file)
-            except Exception:
-                pass
-
-        def _img_to_data_url(img_data: bytes, filename: str) -> str:
-            if filename.lower().endswith(".png"):
-                mime = "image/png"
-            elif filename.lower().endswith(".webp"):
-                mime = "image/webp"
-            else:
-                mime = "image/jpeg"
-            b64 = base64.b64encode(img_data).decode("ascii")
-            return f"data:{mime};base64,{b64}"
-
-        def _read_as_data_url(path: str) -> str | None:
-            try:
-                with open(path, "rb") as f:
-                    img_data = f.read()
-                return _img_to_data_url(img_data, path)
-            except Exception:
-                return None
-
-        try:
-            if provider == "picsum":
-                path = os.path.join(cache_dir, f"picsum_slot_{slot_idx}.jpg")
-                if os.path.exists(path):
-                    data_url = _read_as_data_url(path)
-                    if data_url:
-                        result["url"] = data_url
-                        result["is_base64"] = True
-                        result["success"] = True
-                        result["last_fetch"] = datetime.now().isoformat()
-                if not result["success"]:
-                    img_data = _http_get_bytes(f"https://picsum.photos/seed/{10000 + slot_idx}/1280/800")
-                    with open(path, "wb") as f:
-                        f.write(img_data)
-                    result["url"] = _img_to_data_url(img_data, path)
-                    result["is_base64"] = True
-                    result["success"] = True
-                    result["last_fetch"] = datetime.now().isoformat()
-                    _cleanup_old_wallpapers(legacy_wallpapers_dir, "picsum")
-
-            elif provider == "bing_daily":
-                today = datetime.now().strftime("%Y-%m-%d")
-                cached_new = os.path.join(cache_dir, f"bing_{today}.jpg")
-                cached_legacy = os.path.join(legacy_wallpapers_dir, f"bing_{today}.jpg")
-
-                chosen_cache = None
-                if os.path.exists(cached_new):
-                    chosen_cache = cached_new
-                elif os.path.exists(cached_legacy):
-                    chosen_cache = cached_legacy
-
-                if chosen_cache:
-                    data_url = _read_as_data_url(chosen_cache)
-                    if data_url:
-                        result["url"] = data_url
-                        result["is_base64"] = True
-                        result["success"] = True
-                        result["last_fetch"] = today
-                        _merge_wallpaper_attribution_into_result(result, chosen_cache)
-
-                if not result["success"]:
-                    req = urllib.request.Request(
-                        "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&mkt=en-US",
-                        headers={"User-Agent": _BROWSER_UA},
-                    )
-                    with urllib.request.urlopen(req, timeout=10, context=_NO_VERIFY_SSL) as resp:
-                        data = json_mod.loads(resp.read().decode("utf-8"))
-                    if data.get("images"):
-                        img_path = data["images"][0].get("urlbase", data["images"][0]["url"])
-                        img_url = f"https://www.bing.com{img_path}_1280x800.jpg"
-                        try:
-                            img_req = urllib.request.Request(img_url, headers={"User-Agent": _BROWSER_UA})
-                            with urllib.request.urlopen(img_req, timeout=10, context=_NO_VERIFY_SSL) as img_resp:
-                                img_data = img_resp.read()
-                        except Exception:
-                            img_url = f"https://www.bing.com{data['images'][0]['url']}"
-                            img_req = urllib.request.Request(img_url, headers={"User-Agent": _BROWSER_UA})
-                            with urllib.request.urlopen(img_req, timeout=10, context=_NO_VERIFY_SSL) as img_resp:
-                                img_data = img_resp.read()
-
-                        path = cached_new
-                        with open(path, "wb") as f:
-                            f.write(img_data)
-                        _cleanup_old_wallpapers(legacy_wallpapers_dir, "bing")
-
-                        user_settings = await self._get_user_settings()
-                        user_settings["_bing_date"] = today
-                        await self.settings_setSetting(SETTINGS_KEY_SETTINGS, user_settings)
-                        await self.settings_commit()
-
-                        result["url"] = _img_to_data_url(img_data, path)
-                        result["is_base64"] = True
-                        result["success"] = True
-                        result["last_fetch"] = today
-                        img0 = data["images"][0]
-                        _wallpaper_write_meta(
-                            path,
-                            img0.get("title"),
-                            img0.get("copyright"),
-                        )
-                        _merge_wallpaper_attribution_into_result(result, path)
-
-            elif provider == "lorem_flickr":
-                path = os.path.join(cache_dir, f"loremflickr_slot_{slot_idx}.jpg")
-                if os.path.exists(path):
-                    data_url = _read_as_data_url(path)
-                    if data_url:
-                        result["url"] = data_url
-                        result["is_base64"] = True
-                        result["success"] = True
-                        result["last_fetch"] = datetime.now().isoformat()
-                if not result["success"]:
-                    img_data = _http_get_bytes(f"https://loremflickr.com/1280/800?lock={slot_idx + 1}")
-                    with open(path, "wb") as f:
-                        f.write(img_data)
-                    result["url"] = _img_to_data_url(img_data, path)
-                    result["is_base64"] = True
-                    result["success"] = True
-                    result["last_fetch"] = datetime.now().isoformat()
-
-            elif provider == "nasa_apod":
-                user_settings = await self._get_user_settings()
-                today_key = datetime.now().strftime("%Y-%m-%d")
-                path_guess = os.path.join(cache_dir, f"nasa_apod_{today_key}.jpg")
-                image_path_for_meta: str | None = None
-                if os.path.exists(path_guess):
-                    data_url = _read_as_data_url(path_guess)
-                    if data_url:
-                        result["url"] = data_url
-                        result["is_base64"] = True
-                        result["success"] = True
-                        result["last_fetch"] = today_key
-                        image_path_for_meta = path_guess
-                if not result["success"]:
-                    meta = self._nasa_apod_fetch_meta_sync(user_settings)
-                    if not meta:
-                        result["provider_status"] = (
-                            "NASA APOD unavailable (network or rate limit). "
-                            "Add a free API key from api.nasa.gov in Wallpaper settings."
-                        )
-                        return result
-                    if str(meta.get("media_type", "image")).lower() != "image":
-                        result["provider_status"] = "Today's APOD is not a still image"
-                        return result
-                    apod_date = meta.get("date") or today_key
-                    path = os.path.join(cache_dir, f"nasa_apod_{apod_date}.jpg")
-                    if os.path.exists(path):
-                        data_url = _read_as_data_url(path)
-                        if data_url:
-                            result["url"] = data_url
-                            result["is_base64"] = True
-                            result["success"] = True
-                            result["last_fetch"] = apod_date
-                            image_path_for_meta = path
-                    else:
-                        img_link = meta.get("url") or meta.get("hdurl")
-                        if not img_link:
-                            result["provider_status"] = "APOD response missing image URL"
-                            return result
-                        img_data = _http_get_bytes(img_link)
-                        with open(path, "wb") as f:
-                            f.write(img_data)
-                        _wallpaper_write_meta(path, meta.get("title"), meta.get("copyright"))
-                        result["url"] = _img_to_data_url(img_data, path)
-                        result["is_base64"] = True
-                        result["success"] = True
-                        result["last_fetch"] = apod_date
-                        image_path_for_meta = path
-                if image_path_for_meta:
-                    _merge_wallpaper_attribution_into_result(result, image_path_for_meta)
-
-            elif provider == "local_folder":
-                local_dir = _local_wallpapers_dir()
-                valid_exts = (".jpg", ".jpeg", ".png", ".webp")
-                try:
-                    names = sorted(
-                        f for f in os.listdir(local_dir) if f.lower().endswith(valid_exts)
-                    )
-                except FileNotFoundError:
-                    names = []
-                if names:
-                    cycle = min(pool_sz, len(names))
-                    pick = names[slot_idx % cycle]
-                    file_path = os.path.join(local_dir, pick)
-                    with open(file_path, "rb") as f:
-                        img_data = f.read()
-                    data_url = _img_to_data_url(img_data, pick)
-                    result["url"] = data_url
-                    result["is_base64"] = True
-                    result["success"] = True
-                    result["last_fetch"] = datetime.now().isoformat()
-                else:
-                    result["provider_status"] = f"No images found in {local_dir}"
-
-        except urllib.error.URLError as e:
-            decky.logger.error(f"AlarMe: Network error fetching wallpaper ({provider}): {e}")
-            result["provider_status"] = f"Network error: {e.reason}"
-        except Exception as e:
-            decky.logger.error(f"AlarMe: Failed to fetch wallpaper ({provider}): {e}")
-            result["provider_status"] = str(e)
-
-        return result
-
-    async def prefetch_wallpapers(self, provider: str, count: int | None = None) -> dict:
-        """Download or validate wallpaper pool under DECKY_PLUGIN_RUNTIME_DIR/wallpaper_cache/."""
-        import urllib.request
-        import json as json_mod
-
-        result: dict = {"success": False, "provider_status": None}
-        cache_dir = _wallpaper_cache_dir()
-        pool = await self._wallpaper_pool_size()
-        n = pool
-        if count is not None:
-            try:
-                n = max(1, min(int(count), pool, _WALLPAPER_POOL_MAX))
-            except (TypeError, ValueError):
-                n = pool
-
-        async def emit_progress(step: int, total: int) -> None:
-            try:
-                await decky.emit(
-                    "alarme_wallpaper_prefetch_progress",
-                    {"step": step, "total": total, "provider": provider},
-                )
-            except Exception as e:
-                decky.logger.debug(f"AlarMe: wallpaper prefetch progress emit: {e}")
-
-        try:
-            if provider in ("none",):
-                result["success"] = True
-                return result
-
-            if provider == "local_folder":
-                local_dir = _local_wallpapers_dir()
-                valid_exts = (".jpg", ".jpeg", ".png", ".webp")
-                try:
-                    names = sorted(f for f in os.listdir(local_dir) if f.lower().endswith(valid_exts))
-                except FileNotFoundError:
-                    names = []
-                total_steps = max(1, min(n, len(names)))
-                if not names:
-                    result["provider_status"] = f"No images in {local_dir}"
-                    result["success"] = False
-                    return result
-                for i in range(total_steps):
-                    await emit_progress(i + 1, total_steps)
-                result["success"] = True
-                await self._wallpaper_mark_cache_refreshed()
-                return result
-
-            if provider == "picsum":
-                for i in range(n):
-                    await emit_progress(i + 1, n)
-                    path = os.path.join(cache_dir, f"picsum_slot_{i}.jpg")
-                    if os.path.exists(path) and os.path.getsize(path) > 512:
-                        continue
-                    img_data = _http_get_bytes(f"https://picsum.photos/seed/{10000 + i}/1280/800")
-                    with open(path, "wb") as f:
-                        f.write(img_data)
-
-            elif provider == "bing_daily":
-                await emit_progress(1, 1)
-                today = datetime.now().strftime("%Y-%m-%d")
-                path = os.path.join(cache_dir, f"bing_{today}.jpg")
-                if not (os.path.exists(path) and os.path.getsize(path) > 512):
-                    req = urllib.request.Request(
-                        "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&mkt=en-US",
-                        headers={"User-Agent": _BROWSER_UA},
-                    )
-                    with urllib.request.urlopen(req, timeout=10, context=_NO_VERIFY_SSL) as resp:
-                        data = json_mod.loads(resp.read().decode("utf-8"))
-                    if data.get("images"):
-                        img_path = data["images"][0].get("urlbase", data["images"][0]["url"])
-                        img_url = f"https://www.bing.com{img_path}_1280x800.jpg"
-                        try:
-                            img_req = urllib.request.Request(img_url, headers={"User-Agent": _BROWSER_UA})
-                            with urllib.request.urlopen(img_req, timeout=10, context=_NO_VERIFY_SSL) as img_resp:
-                                img_data = img_resp.read()
-                        except Exception:
-                            img_url = f"https://www.bing.com{data['images'][0]['url']}"
-                            img_req = urllib.request.Request(img_url, headers={"User-Agent": _BROWSER_UA})
-                            with urllib.request.urlopen(img_req, timeout=10, context=_NO_VERIFY_SSL) as img_resp:
-                                img_data = img_resp.read()
-                        with open(path, "wb") as f:
-                            f.write(img_data)
-                        img0 = data["images"][0]
-                        _wallpaper_write_meta(path, img0.get("title"), img0.get("copyright"))
-                        user_settings = await self._get_user_settings()
-                        user_settings["_bing_date"] = today
-                        await self.settings_setSetting(SETTINGS_KEY_SETTINGS, user_settings)
-                        await self.settings_commit()
-
-            elif provider == "lorem_flickr":
-                for i in range(n):
-                    await emit_progress(i + 1, n)
-                    path = os.path.join(cache_dir, f"loremflickr_slot_{i}.jpg")
-                    if os.path.exists(path) and os.path.getsize(path) > 512:
-                        continue
-                    img_data = _http_get_bytes(f"https://loremflickr.com/1280/800?lock={i + 1}")
-                    with open(path, "wb") as f:
-                        f.write(img_data)
-
-            elif provider == "nasa_apod":
-                await emit_progress(1, 1)
-                user_settings = await self._get_user_settings()
-                meta = self._nasa_apod_fetch_meta_sync(user_settings)
-                if not meta:
-                    result["provider_status"] = "NASA APOD prefetch failed (network or API key)"
-                    result["success"] = False
-                    return result
-                if str(meta.get("media_type", "image")).lower() != "image":
-                    result["provider_status"] = "Today's APOD is not a still image"
-                    result["success"] = True
-                    await self._wallpaper_mark_cache_refreshed()
-                    return result
-                apod_date = meta.get("date") or datetime.now().strftime("%Y-%m-%d")
-                path = os.path.join(cache_dir, f"nasa_apod_{apod_date}.jpg")
-                if not (os.path.exists(path) and os.path.getsize(path) > 512):
-                    img_link = meta.get("url") or meta.get("hdurl")
-                    if img_link:
-                        img_data = _http_get_bytes(img_link)
-                        with open(path, "wb") as f:
-                            f.write(img_data)
-                        _wallpaper_write_meta(path, meta.get("title"), meta.get("copyright"))
-            else:
-                result["provider_status"] = f"Unknown provider: {provider}"
-                return result
-
-            result["success"] = True
-            await self._wallpaper_mark_cache_refreshed()
-        except urllib.error.URLError as e:
-            decky.logger.error(f"AlarMe: prefetch_wallpapers network error ({provider}): {e}")
-            result["provider_status"] = f"Network error: {e.reason}"
-        except Exception as e:
-            decky.logger.error(f"AlarMe: prefetch_wallpapers failed ({provider}): {e}")
-            result["provider_status"] = str(e)
-        finally:
-            try:
-                await decky.emit(
-                    "alarme_wallpaper_prefetch_complete",
-                    {
-                        "success": result.get("success", False),
-                        "provider": provider,
-                        "message": result.get("provider_status"),
-                    },
-                )
-            except Exception as e:
-                decky.logger.debug(f"AlarMe: wallpaper prefetch complete emit: {e}")
-
-        return result
-
-    async def check_wallpaper_provider(self, provider: str) -> dict:
-        """Check if a wallpaper provider is reachable."""
-        import urllib.request
-
-        result = {"reachable": False, "message": None}
-
-        try:
-            if provider == "picsum":
-                req = urllib.request.Request(
-                    "https://picsum.photos",
-                    headers={"User-Agent": _BROWSER_UA},
-                    method="HEAD",
-                )
-                urllib.request.urlopen(req, timeout=5, context=_NO_VERIFY_SSL)
-                result["reachable"] = True
-
-            elif provider == "bing_daily":
-                req = urllib.request.Request(
-                    "https://www.bing.com",
-                    headers={"User-Agent": _BROWSER_UA},
-                    method="HEAD",
-                )
-                urllib.request.urlopen(req, timeout=5, context=_NO_VERIFY_SSL)
-                result["reachable"] = True
-
-            elif provider == "lorem_flickr":
-                req = urllib.request.Request(
-                    "https://loremflickr.com/",
-                    headers={"User-Agent": _BROWSER_UA},
-                    method="HEAD",
-                )
-                urllib.request.urlopen(req, timeout=8, context=_NO_VERIFY_SSL)
-                result["reachable"] = True
-
-            elif provider == "nasa_apod":
-                req = urllib.request.Request(
-                    "https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY",
-                    headers={"User-Agent": _BROWSER_UA},
-                    method="HEAD",
-                )
-                urllib.request.urlopen(req, timeout=8, context=_NO_VERIFY_SSL)
-                result["reachable"] = True
-
-            elif provider == "local_folder":
-                local_dir = _local_wallpapers_dir()
-                valid_exts = (".jpg", ".jpeg", ".png", ".webp")
-                files = [f for f in os.listdir(local_dir) if f.lower().endswith(valid_exts)]
-                if files:
-                    result["reachable"] = True
-                else:
-                    result["message"] = "No images found in wallpapers folder"
-
-        except Exception as e:
-            result["message"] = f"Unreachable: {e}"
-
-        return result
-
-    async def get_wallpaper_storage_paths(self) -> dict:
-        """Paths under DECKY_PLUGIN_RUNTIME_DIR for wallpaper cache and user images."""
-        return {
-            "runtime_dir": runtimeDir,
-            "wallpaper_cache_dir": _wallpaper_cache_dir(),
-            "local_wallpapers_dir": _local_wallpapers_dir(),
-        }
-
-    async def get_wifi_info(self) -> dict:
-        """Get current Wi-Fi SSID and signal strength.
-
-        Signal strength is converted from dBm to a 0-100 percentage:
-        -30 dBm or better = 100%, -90 dBm or worse = 0%.
-        """
-        import subprocess
-
-        def dbm_to_quality(dbm: int) -> int:
-            """Convert dBm signal strength to a 0-100 quality percentage."""
-            if dbm >= -30:
-                return 100
-            if dbm <= -90:
-                return 0
-            return int((dbm + 90) / 60 * 100)
-
-        result = {"ssid": None, "signal": None}
-
-        try:
-            proc = subprocess.run(["iw", "dev", "wlan0", "link"], capture_output=True, text=True, timeout=3)
-            if proc.returncode == 0:
-                for line in proc.stdout.split("\n"):
-                    line = line.strip()
-                    if line.startswith("SSID:"):
-                        result["ssid"] = line.split(":", 1)[1].strip()
-                    elif line.startswith("signal:"):
-                        signal_str = line.split(":", 1)[1].strip().split()[0]
-                        dbm = int(signal_str)
-                        result["signal"] = dbm_to_quality(dbm)
-                if result["ssid"] or result["signal"] is not None:
-                    return result
-        except Exception:
-            pass
-
-        try:
-            proc = subprocess.run(["iwconfig", "wlan0"], capture_output=True, text=True, timeout=3)
-            if proc.returncode == 0:
-                for line in proc.stdout.split("\n"):
-                    line = line.strip()
-                    if "ESSID:" in line:
-                        ssid = line.split("ESSID:")[1].strip().strip('"')
-                        if ssid != "off/any":
-                            result["ssid"] = ssid
-                    if "Signal level=" in line:
-                        part = line.split("Signal level=")[1].split()[0]
-                        if "/" in part:
-                            num, denom = part.split("/")
-                            result["signal"] = int(float(num) / float(denom) * 100)
-                        else:
-                            dbm = int(part)
-                            result["signal"] = dbm_to_quality(dbm)
-        except Exception:
-            pass
-
-        return result
-
-    async def list_local_wallpapers(self) -> list:
-        """List available files in the local wallpapers folder."""
-        local_dir = _local_wallpapers_dir()
-        if not os.path.exists(local_dir):
-            return []
-        valid_exts = (".jpg", ".jpeg", ".png", ".webp")
-        return sorted([f for f in os.listdir(local_dir) if f.lower().endswith(valid_exts)])
-
-    # ==================== TIMER METHODS ====================
 
     def _format_timer_label(self, seconds: int) -> str:
         hours = seconds // 3600
@@ -3129,7 +2208,7 @@ class Plugin:
                 await decky.emit("alarme_presets_updated", presets)
         
         # Update sleep inhibitor if prevent_sleep or screensaver settings changed
-        if any(k in new_settings for k in ("pomodoro_prevent_sleep", "timer_prevent_sleep", "screensaver_mode", "screensaver_dim_opacity", "pomodoro_screensaver_mode")):
+        if any(k in new_settings for k in ("pomodoro_prevent_sleep", "timer_prevent_sleep")):
             await self._update_sleep_inhibitor()
                 
         await self.settings_commit()
@@ -3137,317 +2216,10 @@ class Plugin:
         await decky.emit("alarme_settings_updated", current)
         return current
 
-    def _weather_ip_resolve_sync(self) -> tuple[float, float, str] | None:
-        import urllib.request
 
-        def _parse_lat_lon(data: dict) -> tuple[float, float] | None:
-            lat = data.get("latitude")
-            lon = data.get("longitude")
-            if lat is None or lon is None:
-                return None
-            try:
-                return (float(lat), float(lon))
-            except (TypeError, ValueError):
-                return None
 
-        def _label_ipapi(d: dict) -> str:
-            parts = [
-                p
-                for p in (
-                    (d.get("city") or "").strip(),
-                    (d.get("region") or "").strip(),
-                    (d.get("country_name") or d.get("country_code") or "").strip(),
-                )
-                if p
-            ]
-            return ", ".join(parts) if parts else "Unknown"
 
-        def _label_geojs(d: dict) -> str:
-            parts = [
-                p
-                for p in (
-                    (d.get("city") or "").strip(),
-                    (d.get("region") or "").strip(),
-                    (d.get("country") or "").strip(),
-                )
-                if p
-            ]
-            return ", ".join(parts) if parts else "Unknown"
 
-        try:
-            req = urllib.request.Request(
-                "https://ipapi.co/json/",
-                headers={"User-Agent": _BROWSER_UA},
-            )
-            with urllib.request.urlopen(req, timeout=10, context=_NO_VERIFY_SSL) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            if data.get("error"):
-                decky.logger.debug(f"AlarMe: ipapi.co error payload: {data.get('reason', data)}")
-            else:
-                ll = _parse_lat_lon(data)
-                if ll:
-                    return (ll[0], ll[1], f"{_label_ipapi(data)} · IP")
-        except Exception as e:
-            decky.logger.debug(f"AlarMe: ipapi.co lookup failed: {e}")
-
-        try:
-            req = urllib.request.Request(
-                "https://get.geojs.io/v1/ip/geo.json",
-                headers={"User-Agent": _BROWSER_UA},
-            )
-            with urllib.request.urlopen(req, timeout=10, context=_NO_VERIFY_SSL) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            ll = _parse_lat_lon(data)
-            if ll:
-                return (ll[0], ll[1], f"{_label_geojs(data)} · IP")
-        except Exception as e:
-            decky.logger.debug(f"AlarMe: geojs IP lookup failed: {e}")
-
-        decky.logger.error("AlarMe: IP geolocation failed (ipapi.co and geojs)")
-        return None
-
-    async def search_weather_locations(self, query: str, limit: int = 8) -> dict:
-        import urllib.parse
-        import urllib.request
-
-        q = (query or "").strip()
-        if len(q) < 2:
-            return {"success": False, "results": [], "error": "query_too_short"}
-
-        try:
-            n = int(limit)
-        except (TypeError, ValueError):
-            n = 8
-        n = max(1, min(n, 10))
-
-        enc = urllib.parse.quote(q)
-        url = f"https://geocoding-api.open-meteo.com/v1/search?name={enc}&count={n}&language=en"
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": _BROWSER_UA})
-            with urllib.request.urlopen(req, timeout=12, context=_NO_VERIFY_SSL) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except Exception as e:
-            decky.logger.error(f"AlarMe: Open-Meteo geocoding failed: {e}")
-            return {"success": False, "results": [], "error": str(e)}
-
-        raw = data.get("results") or []
-        results = []
-        for r in raw:
-            name = r.get("name") or ""
-            admin1 = r.get("admin1") or ""
-            cc = r.get("country_code") or ""
-            country = r.get("country") or ""
-            lat = r.get("latitude")
-            lon = r.get("longitude")
-            if lat is None or lon is None:
-                continue
-            sub_parts = [p for p in (admin1, country or cc) if p]
-            subtitle = ", ".join(sub_parts) if sub_parts else (cc or "")
-            display_name = f"{name}, {subtitle}" if subtitle else name
-            results.append(
-                {
-                    "name": name,
-                    "admin1": admin1,
-                    "country": country,
-                    "country_code": cc,
-                    "latitude": float(lat),
-                    "longitude": float(lon),
-                    "display_name": display_name,
-                }
-            )
-
-        return {"success": True, "results": results, "error": None}
-
-    async def set_weather_location(
-        self, lat: float, lon: float, display_name: str
-    ) -> dict:
-        try:
-            la = float(lat)
-            lo = float(lon)
-        except (TypeError, ValueError):
-            return {"success": False, "error": "invalid_coordinates"}
-        if not (-90 <= la <= 90 and -180 <= lo <= 180):
-            return {"success": False, "error": "coordinates_out_of_range"}
-        label = (display_name or "").strip()
-        if not label:
-            label = f"{la:.2f}, {lo:.2f}"
-        try:
-            wp = _weather_cache_path()
-            if os.path.isfile(wp):
-                os.remove(wp)
-        except OSError as e:
-            decky.logger.debug(f"AlarMe: weather cache remove: {e}")
-
-        merged = await self.update_settings(
-            {
-                "screensaver_weather_lat": la,
-                "screensaver_weather_lon": lo,
-                "screensaver_weather_city_name": label,
-                "screensaver_weather_location_source": "manual",
-            }
-        )
-        return {"success": True, "error": None, "settings": merged}
-
-    async def set_weather_location_from_ip(self) -> dict:
-        ip_ll = self._weather_ip_resolve_sync()
-        if not ip_ll:
-            return {"success": False, "error": "ip_geo_failed"}
-        la, lo, label = ip_ll
-        try:
-            wp = _weather_cache_path()
-            if os.path.isfile(wp):
-                os.remove(wp)
-        except OSError as e:
-            decky.logger.debug(f"AlarMe: weather cache remove: {e}")
-
-        merged = await self.update_settings(
-            {
-                "screensaver_weather_lat": la,
-                "screensaver_weather_lon": lo,
-                "screensaver_weather_city_name": label,
-                "screensaver_weather_location_source": "ip",
-            }
-        )
-        return {"success": True, "error": None, "settings": merged}
-
-    async def fetch_weather(self) -> dict:
-        import urllib.parse
-        import urllib.request
-
-        empty = {
-            "success": False,
-            "temperature": None,
-            "temperature_unit": "C",
-            "weathercode": None,
-            "is_day": None,
-            "temp_max": None,
-            "temp_min": None,
-            "fetched_at": None,
-            "error": None,
-        }
-
-        user = await self._get_user_settings()
-        unit = user.get("screensaver_weather_unit") or "C"
-        if unit not in ("C", "F"):
-            unit = "C"
-        try:
-            refresh_min = int(user.get("screensaver_weather_refresh_minutes") or 30)
-        except (TypeError, ValueError):
-            refresh_min = 30
-        refresh_min = max(5, min(refresh_min, 180))
-
-        cache_path = _weather_cache_path()
-        now_ts = time.time()
-        try:
-            if os.path.isfile(cache_path):
-                with open(cache_path, "r", encoding="utf-8") as f:
-                    cached = json.load(f)
-                ts = cached.get("fetched_at_ts")
-                payload = cached.get("payload")
-                if (
-                    isinstance(ts, (int, float))
-                    and isinstance(payload, dict)
-                    and (now_ts - ts) < refresh_min * 60
-                ):
-                    out = dict(empty)
-                    out.update(payload)
-                    out["success"] = True
-                    out["from_cache"] = True
-                    return out
-        except Exception as e:
-            decky.logger.debug(f"AlarMe: weather cache read skipped: {e}")
-
-        lat = user.get("screensaver_weather_lat")
-        lon = user.get("screensaver_weather_lon")
-        if lat is None or lon is None:
-            ip_ll = self._weather_ip_resolve_sync()
-            if not ip_ll:
-                out = dict(empty)
-                out["error"] = "no_location"
-                return out
-            lat, lon, _ip_label = ip_ll
-
-        try:
-            la = float(lat)
-            lo = float(lon)
-        except (TypeError, ValueError):
-            out = dict(empty)
-            out["error"] = "invalid_stored_coordinates"
-            return out
-
-        temp_q = "celsius" if unit == "C" else "fahrenheit"
-        q = urllib.parse.urlencode(
-            {
-                "latitude": la,
-                "longitude": lo,
-                "current_weather": "true",
-                "daily": "temperature_2m_max,temperature_2m_min",
-                "timezone": "auto",
-                "forecast_days": 1,
-                "temperature_unit": temp_q,
-            }
-        )
-        url = f"https://api.open-meteo.com/v1/forecast?{q}"
-
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": _BROWSER_UA})
-            with urllib.request.urlopen(req, timeout=15, context=_NO_VERIFY_SSL) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except Exception as e:
-            decky.logger.error(f"AlarMe: Open-Meteo forecast failed: {e}")
-            out = dict(empty)
-            out["temperature_unit"] = unit
-            out["error"] = str(e)
-            return out
-
-        cur = data.get("current_weather") or {}
-        daily = data.get("daily") or {}
-        tmax_list = daily.get("temperature_2m_max") or []
-        tmin_list = daily.get("temperature_2m_min") or []
-
-        try:
-            temp = float(cur["temperature"]) if cur.get("temperature") is not None else None
-        except (TypeError, ValueError, KeyError):
-            temp = None
-        try:
-            tmax = float(tmax_list[0]) if tmax_list else None
-        except (TypeError, ValueError, IndexError):
-            tmax = None
-        try:
-            tmin = float(tmin_list[0]) if tmin_list else None
-        except (TypeError, ValueError, IndexError):
-            tmin = None
-
-        wc = cur.get("weathercode")
-        try:
-            wc_int = int(wc) if wc is not None else None
-        except (TypeError, ValueError):
-            wc_int = None
-        try:
-            is_day = int(cur["is_day"]) if cur.get("is_day") is not None else None
-        except (TypeError, ValueError):
-            is_day = None
-
-        fetched_iso = datetime.now().isoformat(timespec="seconds")
-        payload = {
-            "success": True,
-            "temperature": temp,
-            "temperature_unit": unit,
-            "weathercode": wc_int,
-            "is_day": is_day,
-            "temp_max": tmax,
-            "temp_min": tmin,
-            "fetched_at": fetched_iso,
-            "error": None,
-        }
-
-        try:
-            with open(cache_path, "w", encoding="utf-8") as f:
-                json.dump({"fetched_at_ts": now_ts, "payload": payload}, f, indent=0)
-        except Exception as e:
-            decky.logger.error(f"AlarMe: weather cache write failed: {e}")
-
-        return dict(payload)
 
     async def get_overlay_data(self) -> dict:
         """Get aggregated data for the in-game overlay.
@@ -3770,17 +2542,6 @@ class Plugin:
         elif current_position not in {"default", "custom"}:
             merged["overlay_position"] = "default"
 
-        # Remove legacy floating layout mode in favor of large + pixel shift drift.
-        if merged.get("overlay_screensaver_layout") == "floating":
-            merged["overlay_screensaver_layout"] = "large"
-
-        valid_wallpaper_providers = frozenset(
-            {"none", "picsum", "bing_daily", "lorem_flickr", "nasa_apod", "local_folder"}
-        )
-        wp_provider = merged.get("screensaver_wallpaper_provider")
-        if wp_provider not in valid_wallpaper_providers:
-            merged["screensaver_wallpaper_provider"] = DEFAULT_SETTINGS["screensaver_wallpaper_provider"]
-
         return merged
 
     async def _migrate_settings_schema(self):
@@ -3822,10 +2583,6 @@ class Plugin:
         current_position = updated.get("overlay_position")
         if current_position in position_map:
             updated["overlay_position"] = position_map[current_position]
-            changed = True
-
-        if updated.get("overlay_screensaver_layout") == "floating":
-            updated["overlay_screensaver_layout"] = "large"
             changed = True
 
         if "overlay_custom_x" not in updated:
@@ -4493,7 +3250,6 @@ class Plugin:
         await self.settings_read()
         await self._migrate_settings_schema()
         await self._migrate_timer_settings()
-        await self._emit_screensaver_reset_state()
 
         # Resume any active timers
         timers = await self._get_timers()
