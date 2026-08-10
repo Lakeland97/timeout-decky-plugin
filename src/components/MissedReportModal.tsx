@@ -1,6 +1,6 @@
 import { ConfirmModal, showModal, Focusable } from "@decky/ui";
 import { callable } from "@decky/api";
-import { FaBell, FaStopwatch, FaRedo, FaBrain } from "react-icons/fa";
+import { FaBell, FaStopwatch, FaBrain } from "react-icons/fa";
 import { MissedItem } from "../types";
 import { formatTime } from "../utils/time";
 import { useUIComposition, UIComposition } from "../utils/uiComposition";
@@ -73,7 +73,6 @@ function MissedReportModalContent({ items, use24h, closeModal }: MissedReportMod
                             <div style={{ fontSize: 18, color: '#aaeeff', display: 'flex', alignItems: 'center' }}>
                                 {item.type === 'alarm' && <FaBell />}
                                 {item.type === 'timer' && <FaStopwatch />}
-                                {item.type === 'reminder' && <FaRedo />}
                                 {item.type === 'pomodoro' && <FaBrain />}
                             </div>
                             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>

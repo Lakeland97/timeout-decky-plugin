@@ -12,7 +12,7 @@ import {
     ToggleField
 } from "@decky/ui";
 import { callable } from "@decky/api";
-import { FaVolumeUp, FaBell, FaClock, FaBrain, FaCoffee, FaPlay, FaPause, FaHourglassHalf, FaSave, FaFileImport, FaBullseye, FaMusic, FaTrash, FaCog, FaDatabase, FaEye, FaGamepad, FaHistory, FaBellSlash, FaStar, FaRedo, FaStopwatch, FaShieldAlt } from "react-icons/fa";
+import { FaVolumeUp, FaBell, FaClock, FaBrain, FaCoffee, FaPlay, FaPause, FaHourglassHalf, FaSave, FaFileImport, FaBullseye, FaMusic, FaTrash, FaCog, FaDatabase, FaEye, FaGamepad, FaHistory, FaBellSlash, FaStar, FaStopwatch, FaShieldAlt } from "react-icons/fa";
 import { useEffect, useState, useRef } from "react";
 import { useSettings } from "../hooks/useSettings";
 import { useUIComposition, UIComposition } from "../utils/uiComposition";
@@ -225,33 +225,6 @@ const AlarmSettingsPage = () => {
     );
 };
 
-// Reminder Settings Page
-const ReminderSettingsPage = () => {
-    const { settings, updateSetting } = useSettings();
-
-    return (
-        <ScrollableContent>
-            <PanelSection>
-                <BinarySelector
-                    label="Behavior while Suspended"
-                    description="What happens when device is sleeping"
-                    leftOption={{ value: 'pause', label: 'Shift (Pause)' }}
-                    rightOption={{ value: 'continue', label: 'Miss (Continue)' }}
-                    value={settings.reminder_suspend_behavior || 'continue'}
-                    onChange={(val) => updateSetting('reminder_suspend_behavior', val as 'continue' | 'pause')}
-                    icon={<FaRedo size={16} />}
-                />
-                <PanelSectionRow>
-                    <div style={{ fontSize: 12, color: '#888888', padding: '8px 0' }}>
-                        <strong>Shift:</strong> Reminder timer pauses during suspend and resumes when device wakes.<br />
-                        <strong>Miss:</strong> Timer continues during suspend; if it expires, it's reported as missed.
-                    </div>
-                </PanelSectionRow>
-            </PanelSection>
-        </ScrollableContent>
-    );
-};
-
 // Pomodoro Settings Page
 const PomodoroSettingsPage = () => {
     const { settings, updateSetting } = useSettings();
@@ -394,11 +367,10 @@ const TAB_LABELS: Record<string, string> = {
     "timers": "Timers",
     "alarms": "Alarms",
     "pomodoro": "Focus",
-    "reminders": "Reminders",
     "stopwatch": "Stopwatch"
 };
 
-const DEFAULT_TAB_ORDER = ["timers", "alarms", "pomodoro", "reminders", "stopwatch"];
+const DEFAULT_TAB_ORDER = ["timers", "alarms", "pomodoro", "stopwatch"];
 
 // General Settings Page
 const GeneralSettingsPage = () => {
@@ -665,7 +637,7 @@ const OverlaySettingsPage = () => {
             <PanelSection title="About Overlay">
                 <PanelSectionRow>
                     <div style={{ fontSize: 12, color: '#aaaaaa', padding: '4px 0', lineHeight: 1.5 }}>
-                        A compact bar with upcoming timers, alarms, and reminders.
+                        A compact bar with upcoming timers and alarms.
                         It can render on top of the Steam UI <strong>and</strong> on top of running games or apps,
                         so you can keep an eye on your next alerts without leaving what you are doing.
                     </div>
@@ -919,16 +891,6 @@ const OverlaySettingsPage = () => {
 
                         <PanelSectionRow>
                             <ToggleField
-                                icon={<FaRedo size={16} />}
-                                label="Reminders"
-                                description="Show next periodic reminders"
-                                checked={settings.overlay_show_reminders ?? true}
-                                onChange={(value) => updateSetting('overlay_show_reminders', value)}
-                            />
-                        </PanelSectionRow>
-
-                        <PanelSectionRow>
-                            <ToggleField
                                 icon={<FaShieldAlt size={16} />}
                                 label="Prevent Sleep Badge"
                                 description="Show a shield icon when the device is being prevented from sleeping"
@@ -964,7 +926,7 @@ const showFactoryResetConfirm = (onConfirm: () => void) => {
     showModal(
         <ConfirmModal
             strTitle="Factory Reset"
-            strDescription="This will permanently delete all alarms, timers, reminders, Pomodoro data, and reset all settings to defaults. Custom sounds in ~/Music/AlarMe_Sounds will NOT be deleted. This action cannot be undone."
+            strDescription="This will permanently delete all alarms, timers, Pomodoro data, and reset all settings to defaults. Custom sounds in ~/Music/AlarMe_Sounds will NOT be deleted. This action cannot be undone."
             strOKButtonText="Reset Everything"
             strCancelButtonText="Cancel"
             onOK={onConfirm}
@@ -1005,7 +967,7 @@ const FactoryResetPage = () => {
             <PanelSection>
                 <PanelSectionRow>
                     <div style={{ fontSize: 13, color: '#cccccc', padding: '8px 0' }}>
-                        Reset all settings to defaults and delete all data including alarms, timers, reminders, and Pomodoro sessions.
+                        Reset all settings to defaults and delete all data including alarms, timers, and Pomodoro sessions.
                     </div>
                 </PanelSectionRow>
                 <PanelSectionRow>
@@ -1076,11 +1038,6 @@ export const SettingsPage = () => {
             title: "Alarms",
             icon: <FaBell size={16} />,
             content: <AlarmSettingsPage />
-        },
-        {
-            title: "Reminders",
-            icon: <FaRedo size={16} />,
-            content: <ReminderSettingsPage />
         },
         {
             title: "Pomodoro",

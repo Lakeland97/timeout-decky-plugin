@@ -95,35 +95,6 @@ export interface DailyHistoryEntry {
     sessions: number;
 }
 
-// Reminder types (Periodic Reminders)
-export interface Reminder {
-    id: string;
-    label: string;
-    frequency_minutes: number;  // 15-180 minutes
-    start_time: string | null;  // ISO timestamp or null for "now"
-    recurrences: number;        // -1 = infinite, or positive integer
-    only_while_gaming: boolean; // only tick down while a game is running
-    reset_on_game_start: boolean; // if true, reset timer when game starts
-    sound: string;
-    volume: number;
-    subtle_mode: boolean;
-    prevent_sleep?: boolean;    // per-reminder prevent sleep
-    screensaver_mode?: 'off' | 'black' | 'dim';
-    enabled: boolean;
-    created_at: number;
-    // Runtime state (read-only from backend)
-    next_trigger?: string;
-    triggers_remaining?: number;
-}
-
-export interface ReminderTriggeredEvent {
-    reminder: Reminder;
-    sound: string;
-    volume: number;
-    subtle_mode: boolean;
-    time_format_24h?: boolean;
-}
-
 // Settings types
 export interface UserSettings {
     snooze_duration: number;      // default snooze for alarms
@@ -149,7 +120,6 @@ export interface UserSettings {
     missed_alerts_enabled: boolean;
     missed_alerts_window: number; // hours to look back
     // Suspend Behavior
-    reminder_suspend_behavior?: 'continue' | 'pause';
     pomodoro_suspend_behavior?: 'continue' | 'pause';
     // Display settings
     snooze_activation_delay: number;
@@ -166,7 +136,6 @@ export interface UserSettings {
     overlay_show_timers: boolean;
     overlay_show_alarms: boolean;
     overlay_show_pomodoros: boolean;
-    overlay_show_reminders: boolean;
     overlay_show_stopwatch: boolean;
     overlay_compact_mode: boolean;
     overlay_show_prevent_sleep_badge: boolean;
@@ -177,7 +146,6 @@ export interface UserSettings {
     prevent_sleep_pomodoro?: boolean;
     prevent_sleep_alarms?: boolean;
     prevent_sleep_alarms_window?: number;  // minutes before alarm to keep awake
-    prevent_sleep_reminders?: boolean;
     // Timer presets settings
     presets_enabled: boolean;
     presets_max_visible: number;
@@ -263,7 +231,7 @@ export interface SleepInhibitorStatus {
 
 export interface MissedItem {
     id: string;
-    type: 'alarm' | 'timer' | 'reminder' | 'pomodoro';
+    type: 'alarm' | 'timer' | 'pomodoro';
     label: string;
     due_time: number;
     missed_at: number;
@@ -317,7 +285,7 @@ export type OverlayPosition = 'default' | 'custom';
 
 export type OverlayDisplayMode = 'both' | 'steam_only' | 'gaming_only' | 'always';
 
-export type OverlayCategory = 'timer' | 'alarm' | 'pomodoro' | 'reminder' | 'stopwatch';
+export type OverlayCategory = 'timer' | 'alarm' | 'pomodoro' | 'stopwatch';
 
 export interface OverlayAlert {
     id: string;
@@ -349,7 +317,7 @@ export interface StopwatchState {
 }
 
 // Tab types
-export type TabId = 'timers' | 'alarms' | 'stopwatch' | 'pomodoro' | 'reminders' | 'settings';
+export type TabId = 'timers' | 'alarms' | 'stopwatch' | 'pomodoro' | 'settings';
 
 // Screensaver 2.0 types
 export type ScreensaverLayout = 'compact' | 'large' | 'fullscreen';

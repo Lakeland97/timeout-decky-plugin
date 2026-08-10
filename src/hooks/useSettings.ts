@@ -83,7 +83,6 @@ const DEFAULT_SETTINGS: UserSettings = {
     pixel_shift_range: 3,
     pixel_shift_interval_seconds: 60,
     // Suspend Behavior
-    reminder_suspend_behavior: 'continue', // 'continue' = missed alerts, 'pause' = shift schedule
     pomodoro_suspend_behavior: 'continue', // 'continue' = missed session, 'pause' = shift session
     // Display settings
     snooze_activation_delay: 2.0,
@@ -100,7 +99,6 @@ const DEFAULT_SETTINGS: UserSettings = {
     overlay_show_timers: true,
     overlay_show_alarms: true,
     overlay_show_pomodoros: true,
-    overlay_show_reminders: true,
     overlay_show_stopwatch: false,
     overlay_compact_mode: false,
     overlay_show_prevent_sleep_badge: true,
@@ -109,14 +107,13 @@ const DEFAULT_SETTINGS: UserSettings = {
     presets_enabled: true,
     presets_max_visible: 5,
     // Tab Order
-    tab_order: ["timers", "alarms", "pomodoro", "reminders", "stopwatch"],
+    tab_order: ["timers", "alarms", "pomodoro", "stopwatch"],
     // Prevent Sleep settings
     prevent_sleep_enabled: false,
     prevent_sleep_timers: true,
     prevent_sleep_pomodoro: true,
     prevent_sleep_alarms: false,
     prevent_sleep_alarms_window: 60,  // default 1 hour
-    prevent_sleep_reminders: false
 };
 
 export function useSettings() {

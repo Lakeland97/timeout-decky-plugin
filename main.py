@@ -27,13 +27,11 @@ SETTINGS_KEY_PRESETS = "presets"
 SETTINGS_KEY_SETTINGS = "user_settings"
 SETTINGS_KEY_POMODORO = "pomodoro_state"
 SETTINGS_KEY_RECENT_TIMERS = "recent_timers"
-SETTINGS_KEY_REMINDERS = "reminders"
 SETTINGS_KEY_STOPWATCH = "stopwatch_state"
 
 # Limits to prevent excessive data
 MAX_ACTIVE_TIMERS = 50
 MAX_ALARMS = 100
-MAX_REMINDERS = 50
 MAX_RECENT_TIMERS = 20
 MAX_PRESETS = 50
 MAX_STOPWATCH_LAPS = 100
@@ -61,7 +59,6 @@ DEFAULT_SETTINGS = {
     # Missed Alerts settings
     "missed_alerts_enabled": True,
     "missed_alerts_window": 24,
-    "reminder_suspend_behavior": "continue",
     "pomodoro_suspend_behavior": "continue",
     # Display settings
     "snooze_activation_delay": 2.0,
@@ -78,7 +75,6 @@ DEFAULT_SETTINGS = {
     "overlay_show_timers": True,
     "overlay_show_alarms": True,
     "overlay_show_pomodoros": True,
-    "overlay_show_reminders": True,
     "overlay_show_stopwatch": False,
     "overlay_compact_mode": False,
     "overlay_show_prevent_sleep_badge": True,
@@ -87,7 +83,7 @@ DEFAULT_SETTINGS = {
     "presets_enabled": True,
     "presets_max_visible": 5,
     # Tab Order
-    "tab_order": ["timers", "alarms", "pomodoro", "reminders", "stopwatch"]
+    "tab_order": ["timers", "alarms", "pomodoro", "stopwatch"]
 }
 
 # Default presets
@@ -105,9 +101,7 @@ class Plugin:
     timer_tasks: dict = {}
     alarm_check_task = None
     pomodoro_task = None
-    reminder_check_task = None
     suspend_monitor_task = None
-    reminder_tasks: dict = {}  # Active reminder countdown tasks
     _game_running: bool = False  # Track game state from frontend
     loop = None
     
@@ -2323,39 +2317,6 @@ class Plugin:
                 elif user_settings.get("overlay_show_pomodoros", True):
                     alerts.append(alert)
         
-        # Reminders - always check for sleep-preventing ones
-        reminders = await self._get_reminders()
-        for reminder_id, reminder in reminders.items():
-            if not reminder.get("enabled"):
-                continue
-            if reminder.get("only_while_gaming") and not await self._is_game_running():
-                continue
-            next_trigger_str = reminder.get("next_trigger")
-            if not next_trigger_str:
-                continue
-            try:
-                next_trigger_dt = datetime.fromisoformat(next_trigger_str)
-                next_ts = next_trigger_dt.timestamp()
-                is_preventing = reminder.get("prevent_sleep", False)
-                
-                if next_ts <= cutoff or is_preventing:
-                    alert = {
-                        "id": f"reminder-{reminder_id}",
-                        "category": "reminder",
-                        "label": reminder.get("label", "Reminder"),
-                        "time": next_ts,
-                        "remaining": next_ts - now,
-                        "subtle_mode": reminder.get("subtle_mode", False),
-                        "auto_suspend": False,
-                        "prevent_sleep": is_preventing
-                    }
-                    if is_preventing:
-                        sleep_preventing_alerts.append(alert)
-                    elif user_settings.get("overlay_show_reminders", True):
-                        alerts.append(alert)
-            except:
-                continue
-        
         # Stopwatch - show first if enabled and running
         stopwatch = await self._get_stopwatch_state()
         if stopwatch.get("status") == "running":
@@ -2490,10 +2451,6 @@ class Plugin:
                 await self.settings_setSetting(SETTINGS_KEY_SETTINGS, settings_to_save)
                 await self.settings_commit()
                 await decky.emit("alarme_settings_updated", settings_to_save)
-            
-            if "reminders" in data:
-                await self._save_reminders(data["reminders"])
-                await self._emit_all_reminders()
             
             # Emit general event so frontend can trigger full refresh
             await decky.emit("alarme_data_imported", True)
@@ -2652,189 +2609,13 @@ class Plugin:
     async def settings_setSetting(self, key: str, value):
         return settings.setSetting(key, value)
 
-    # ==================== REMINDER METHODS ====================
 
-    async def create_reminder(self, label: str = "", frequency_minutes: int = 60,
-                             start_time: str = None, recurrences: int = -1,
-                             only_while_gaming: bool = False, reset_on_game_start: bool = False,
-                             sound: str = "alarm.mp3", volume: int = 100,
-                             subtle_mode: bool = False,
-                             prevent_sleep: bool = False,
-                             screensaver_mode: str = "off") -> dict:
-        """
-        Create a new periodic reminder.
-        frequency_minutes: interval between reminders (15-180)
-        start_time: ISO timestamp for first trigger, or None for "now"
-        recurrences: -1 = infinite, or positive integer
-        only_while_gaming: if True, only tick down while a game is running
-        reset_on_game_start: if True, reset timer loop when game starts
-        prevent_sleep: if True, keep device awake while reminder is active
-        """
-        # Check limit
-        reminders = await self._get_reminders()
-        if len(reminders) >= MAX_REMINDERS:
-            decky.logger.warning(f"AlarMe: Reminder limit reached ({MAX_REMINDERS})")
-            return None
-        
-        reminder_id = str(uuid.uuid4())[:8]
-        
-        # Calculate first trigger time
-        if start_time:
-            # Start time is reference point; first trigger is freq minutes after
-            try:
-                start_dt = datetime.fromisoformat(start_time)
-                next_trigger = (start_dt + timedelta(minutes=frequency_minutes)).isoformat()
-            except ValueError:
-                # Fallback if format error
-                next_trigger = (datetime.now() + timedelta(minutes=frequency_minutes)).isoformat()
-        else:
-            # "Now" means start counting from now
-            next_trigger = (datetime.now() + timedelta(minutes=frequency_minutes)).isoformat()
-        
-        #Force disable prevent_sleep if only_while_gaming is active
-        if only_while_gaming:
-            prevent_sleep = False
-            
-        reminder_data = {
-            "id": reminder_id,
-            "label": label or f"Reminder every {frequency_minutes} min",
-            "frequency_minutes": frequency_minutes,
-            "start_time": start_time,
-            "recurrences": recurrences,
-            "only_while_gaming": only_while_gaming,
-            "reset_on_game_start": reset_on_game_start,
-            "sound": sound,
-            "volume": volume,
-            "subtle_mode": subtle_mode,
-            "prevent_sleep": prevent_sleep,
-            "screensaver_mode": screensaver_mode,
-            "enabled": True,
-            "created_at": time.time(),
-            "next_trigger": next_trigger,
-            "triggers_remaining": recurrences  # -1 = infinite
-        }
-        
-        reminders = await self._get_reminders()
-        reminders[reminder_id] = reminder_data
-        await self._save_reminders(reminders)
-        
-        decky.logger.info(f"AlarMe: Created reminder {reminder_id} every {frequency_minutes} min")
-        await decky.emit("alarme_reminder_created", reminder_data)
-        await self._emit_all_reminders()
-        # Update sleep inhibitor
-        await self._update_sleep_inhibitor()
-        
-        return reminder_data
 
-    async def update_reminder(self, reminder_id: str, label: str = "", 
-                             frequency_minutes: int = 60, start_time: str = None,
-                             recurrences: int = -1, only_while_gaming: bool = False,
-                             reset_on_game_start: bool = False,
-                             sound: str = "alarm.mp3", volume: int = 100,
-                             subtle_mode: bool = False,
-                             prevent_sleep: bool = False,
-                             screensaver_mode: str = "off") -> dict:
-        """Update an existing reminder's settings."""
-        reminders = await self._get_reminders()
-        if reminder_id not in reminders:
-            return None
-        
-        reminder = reminders[reminder_id]
-        reminder["label"] = label or f"Reminder every {frequency_minutes} min"
-        reminder["frequency_minutes"] = frequency_minutes
-        reminder["start_time"] = start_time
-        reminder["recurrences"] = recurrences
-        reminder["only_while_gaming"] = only_while_gaming
-        reminder["reset_on_game_start"] = reset_on_game_start
-        reminder["sound"] = sound
-        reminder["volume"] = volume
-        reminder["subtle_mode"] = subtle_mode
-        reminder["prevent_sleep"] = prevent_sleep
-        reminder["screensaver_mode"] = screensaver_mode
-        
-        #Force disable prevent_sleep if only_while_gaming is active
-        if only_while_gaming:
-            reminder["prevent_sleep"] = False
-        
-        # Recalculate next trigger if frequency changed
-        if start_time:
-            # Start time is reference point
-            try:
-                start_dt = datetime.fromisoformat(start_time)
-                reminder["next_trigger"] = (start_dt + timedelta(minutes=frequency_minutes)).isoformat()
-            except ValueError:
-                reminder["next_trigger"] = (datetime.now() + timedelta(minutes=frequency_minutes)).isoformat()
-        else:
-            reminder["next_trigger"] = (datetime.now() + timedelta(minutes=frequency_minutes)).isoformat()
-        
-        # Reset counters and enable on update
-        reminder["triggers_remaining"] = recurrences
-        reminder["enabled"] = True
-        
-        await self._save_reminders(reminders)
-        await decky.emit("alarme_reminder_updated", reminder)
-        await self._emit_all_reminders()
-        # Update sleep inhibitor
-        await self._update_sleep_inhibitor()
-        
-        decky.logger.info(f"AlarMe: Updated reminder {reminder_id}")
-        return reminder
 
-    async def delete_reminder(self, reminder_id: str) -> bool:
-        """Delete a reminder."""
-        reminders = await self._get_reminders()
-        if reminder_id in reminders:
-            del reminders[reminder_id]
-            await self._save_reminders(reminders)
-            
-            # Cancel any active task for this reminder
-            if reminder_id in self.reminder_tasks:
-                self.reminder_tasks[reminder_id].cancel()
-                del self.reminder_tasks[reminder_id]
-            
-            decky.logger.info(f"AlarMe: Deleted reminder {reminder_id}")
-            await decky.emit("alarme_reminder_deleted", reminder_id)
-            await self._emit_all_reminders()
-            # Update sleep inhibitor
-            await self._update_sleep_inhibitor()
-            return True
-        return False
 
-    async def toggle_reminder(self, reminder_id: str, enabled: bool) -> bool:
-        """Enable or disable a reminder."""
-        reminders = await self._get_reminders()
-        if reminder_id in reminders:
-            reminders[reminder_id]["enabled"] = enabled
-            
-            # Reset next trigger if re-enabling
-            if enabled:
-                freq = reminders[reminder_id]["frequency_minutes"]
-                reminders[reminder_id]["next_trigger"] = (datetime.now() + timedelta(minutes=freq)).isoformat()
-                reminders[reminder_id]["triggers_remaining"] = reminders[reminder_id]["recurrences"]
-            
-            await self._save_reminders(reminders)
-            await decky.emit("alarme_reminder_updated", reminders[reminder_id])
-            await self._emit_all_reminders()
-            # Update sleep inhibitor
-            await self._update_sleep_inhibitor()
-            return True
-        return False
 
-    async def get_reminders(self) -> list:
-        """Get all reminders."""
-        reminders = await self._get_reminders()
-        return list(reminders.values())
 
-    async def _get_reminders(self) -> dict:
-        return await self.settings_getSetting(SETTINGS_KEY_REMINDERS, {})
 
-    async def _save_reminders(self, reminders: dict):
-        await self.settings_setSetting(SETTINGS_KEY_REMINDERS, reminders)
-        await self.settings_commit()
-
-    async def _emit_all_reminders(self):
-        reminders = await self.get_reminders()
-        await decky.emit("alarme_reminders_updated", reminders)
 
     async def get_game_status(self) -> bool:
         """Get current game running status."""
@@ -2849,130 +2630,8 @@ class Plugin:
         """Update game running state from frontend."""
         self._game_running = is_running
         decky.logger.info(f"AlarMe: Game running state set to {is_running}")
-        
-        # Handle "Reset on game start" logic
-        if is_running:
-            reminders = await self._get_reminders()
-            modified = False
-            now = datetime.now()
-            
-            for reminder_id, reminder in reminders.items():
-                if not reminder.get("enabled"):
-                    continue
-                    
-                if reminder.get("only_while_gaming") and reminder.get("reset_on_game_start"):
-                    # Reset this reminder
-                    freq = reminder.get("frequency_minutes", 60)
-                    reminder["next_trigger"] = (now + timedelta(minutes=freq)).isoformat()
-                    original_recurrences = reminder.get("recurrences", -1)
-                    if original_recurrences != -1:
-                         reminder["triggers_remaining"] = original_recurrences
-                    
-                    decky.logger.info(f"AlarMe: Reset reminder {reminder_id} on game start")
-                    modified = True
-            
-            if modified:
-                await self._save_reminders(reminders)
-                await self._emit_all_reminders()
-                
         return True
 
-    async def _reminder_checker(self):
-        """Background task to check and trigger reminders."""
-        decky.logger.info("AlarMe: Reminder checker started")
-        
-        while True:
-            try:
-                await asyncio.sleep(1)  # Check every second
-                now_ts = time.time()
-                
-                # Sync with suspend monitor to avoid double-processing during resume
-                if self.last_tick > 0 and now_ts - self.last_tick > 5:
-                    continue
-
-                reminders = await self._get_reminders()
-                now = datetime.now()
-                modified = False
-                
-                for reminder_id, reminder in list(reminders.items()):
-                    if not reminder.get("enabled"):
-                        continue
-                    
-                    # Check if exhausted
-                    triggers_remaining = reminder.get("triggers_remaining", -1)
-                    if triggers_remaining == 0:
-                        continue
-                    
-                    # Check only_while_gaming
-                    if reminder.get("only_while_gaming"):
-                        if not await self._is_game_running():
-                            continue
-                    
-                    # Check if it's time to trigger
-                    next_trigger_str = reminder.get("next_trigger")
-                    if not next_trigger_str:
-                        continue
-                    
-                    try:
-                        next_trigger = datetime.fromisoformat(next_trigger_str)
-                    except:
-                        continue
-                    
-                    if now >= next_trigger:
-                        #  Check if missed by > 60 seconds
-                        missed_delay = (now - next_trigger).total_seconds()
-                        if missed_delay > 60:
-                             # Gaming-only reminders fall behind when no game runs — not a real miss
-                             if not reminder.get("only_while_gaming"):
-                                 decky.logger.info(f"AlarMe: Reminder {reminder_id} missed by {missed_delay:.0f}s")
-                                 await self._add_missed_item("reminder", reminder_id, reminder["label"], next_trigger.timestamp())
-                             else:
-                                 decky.logger.info(f"AlarMe: Gaming-only reminder {reminder_id} overdue by {missed_delay:.0f}s - advancing silently")
-                             # Fall through to update next trigger, but SKIP emit
-                        else:
-                            # Trigger the reminder!
-                            if reminder.get("only_while_gaming") and not await self._is_game_running():
-                                continue
-
-                            decky.logger.info(f"AlarMe: Triggering reminder {reminder_id}")
-                            
-                            user_settings = await self._get_user_settings()
-                            await decky.emit("alarme_reminder_triggered", {
-                                "reminder": reminder,
-                                "sound": reminder.get("sound", "alarm.mp3"),
-                                "volume": reminder.get("volume", 100),
-                                "subtle_mode": reminder.get("subtle_mode", False),
-                                "time_format_24h": user_settings.get("time_format_24h", True),
-                                "snooze_activation_delay": user_settings.get("snooze_activation_delay", 2.0)
-                            })
-                        
-                        # Update for next trigger
-                        freq = reminder["frequency_minutes"]
-                        reminder["next_trigger"] = (now + timedelta(minutes=freq)).isoformat()
-                        
-                        # Decrement remaining if not infinite
-                        if triggers_remaining > 0:
-                            reminder["triggers_remaining"] = triggers_remaining - 1
-                            # Auto-disable when exhausted
-                            if reminder["triggers_remaining"] == 0:
-                                reminder["enabled"] = False
-                                decky.logger.info(f"AlarMe: Reminder {reminder_id} exhausted, auto-disabled")
-                        
-                        modified = True
-                
-                if modified:
-                    await self._save_reminders(reminders)
-                    await self._emit_all_reminders()
-                    
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                decky.logger.error(f"AlarMe: Reminder checker error: {e}")
-                await asyncio.sleep(5)
-        
-        decky.logger.info("AlarMe: Reminder checker stopped")
-
-    # ==================== LIFECYCLE METHODS ====================
 
     async def _check_missed_alarms(self, start_time: float, end_time: float):
         """Check for alarms missed between start_time and end_time.
@@ -3047,89 +2706,6 @@ class Plugin:
         if modified:
             await self._save_alarms(alarms)
 
-    async def _check_missed_reminders(self, start_time: float, end_time: float):
-        """Check for reminders missed between start_time and end_time."""
-        reminders = await self._get_reminders()
-        user_settings = await self._get_user_settings()
-        behavior = user_settings.get("reminder_suspend_behavior", "continue")
-        
-        modified = False
-        
-        # PAUSE behavior: shift the schedule instead of logging missed items
-        if behavior == "pause":
-            suspend_duration = end_time - start_time
-            if suspend_duration > 0:
-                for reminder_id, reminder in reminders.items():
-                    if not reminder.get("enabled"): continue
-                    # Gaming-only reminders don't tick during suspend, no shift needed
-                    if reminder.get("only_while_gaming"): continue
-                    try:
-                        # Shift next_trigger forward by the duration of suspend
-                        if reminder.get("next_trigger"):
-                            dt = datetime.fromisoformat(reminder["next_trigger"])
-                            dt += timedelta(seconds=suspend_duration)
-                            reminder["next_trigger"] = dt.isoformat()
-                            modified = True
-                    except Exception as e:
-                        decky.logger.error(f"AlarMe: Error shifting reminder {reminder_id}: {e}")
-            
-            if modified:
-                await self._save_reminders(reminders)
-            return
-
-        # Behavior is CONTINUE (Report Missed)
-        for reminder_id, reminder in reminders.items():
-             if not reminder.get("enabled"): continue
-             
-             # Gaming-only reminders should NOT be missed during suspend
-             # (device is not gaming when suspended)
-             if reminder.get("only_while_gaming"):
-                 continue
-             
-             try:
-                 next_trigger_dt = datetime.fromisoformat(reminder["next_trigger"])
-             except: continue
-             
-             next_ts = next_trigger_dt.timestamp()
-             freq = reminder["frequency_minutes"]
-             
-             # Loop to count missed occurrences and find the last one
-             check_ts = next_ts
-             processed_count = 0
-             last_missed = None
-             
-             while check_ts < end_time:
-                 if check_ts >= start_time:
-                     # In window - tracking as missed
-                     last_missed = check_ts
-                 
-                 check_ts += (freq * 60)
-                 processed_count += 1
-            
-             if last_missed:
-                 # Calculate proper next triggers
-                 reminder["next_trigger"] = datetime.fromtimestamp(check_ts).isoformat()
-                 
-                 # Handle triggers remaining
-                 triggers_remaining = reminder.get("triggers_remaining", -1)
-                 if triggers_remaining > 0:
-                     rem = max(0, triggers_remaining - processed_count)
-                     reminder["triggers_remaining"] = rem
-                     if rem == 0:
-                         reminder["enabled"] = False
-                 
-                 # Log only the last missed occurrence (Smart Recurrence)
-                 details = None
-                 missed_in_window = processed_count 
-                 if missed_in_window > 1:
-                     details = f"Missed {missed_in_window} occurrences while away"
-                 
-                 await self._add_missed_item("reminder", reminder_id, reminder["label"], last_missed, details)
-                 
-                 modified = True
-        
-        if modified:
-            await self._save_reminders(reminders)
 
     async def _check_missed_pomodoro(self, start_time: float, end_time: float):
         """Check for pomodoro session interruptions."""
@@ -3207,17 +2783,13 @@ class Plugin:
                         # Run historical checks for Alarms (Always Miss if enabled)
                         await self._check_missed_alarms(check_start, now)
                         
-                        # Run historical checks for Reminders/Pomodoro ONLY if mode is CONTINUE
-                        if user_settings.get("reminder_suspend_behavior", "continue") == "continue":
-                            await self._check_missed_reminders(check_start, now)
+                        # Run historical checks for Pomodoro ONLY if mode is CONTINUE
                         
                         if user_settings.get("pomodoro_suspend_behavior", "continue") == "continue":
                             await self._check_missed_pomodoro(check_start, now)
 
                     # Run Pause (Shift) logic regardless of missed_alerts_enabled
                     # Shift logic handles its own behavior check internally
-                    if user_settings.get("reminder_suspend_behavior", "continue") == "pause":
-                        await self._check_missed_reminders(self.last_tick, now)
                     
                     if user_settings.get("pomodoro_suspend_behavior", "continue") == "pause":
                         await self._check_missed_pomodoro(self.last_tick, now)
@@ -3282,9 +2854,6 @@ class Plugin:
         # Start alarm checker
         self.alarm_check_task = self.loop.create_task(self._alarm_checker())
         
-        # Start reminder checker
-        self.reminder_check_task = self.loop.create_task(self._reminder_checker())
-
         # Start suspend monitor
         self.suspend_monitor_task = self.loop.create_task(self._suspend_monitor())
         
@@ -3313,23 +2882,15 @@ class Plugin:
                 self.pomodoro_task.cancel()
                 self.pomodoro_task = None
             
-            # 4. Cancel reminder checker and all reminder tasks
-            if self.reminder_check_task:
-                self.reminder_check_task.cancel()
-                self.reminder_check_task = None
-            for task in self.reminder_tasks.values():
-                task.cancel()
-            self.reminder_tasks.clear()
-            
-            # 5. Cancel suspend monitor
+            # 4. Cancel suspend monitor
             if self.suspend_monitor_task:
                 self.suspend_monitor_task.cancel()
                 self.suspend_monitor_task = None
             
-            # 6. Reset settings to defaults
+            # 5. Reset settings to defaults
             await self.settings_setSetting(SETTINGS_KEY_SETTINGS, DEFAULT_SETTINGS)
             
-            # 7. Clear all data keys
+            # 6. Clear all data keys
             await self.settings_setSetting(SETTINGS_KEY_TIMERS, {})
             await self.settings_setSetting(SETTINGS_KEY_ALARMS, {})
             await self.settings_setSetting(SETTINGS_KEY_RECENT_TIMERS, [])
@@ -3340,7 +2901,6 @@ class Plugin:
                 "end_time": None,
                 "duration": 0
             })
-            await self.settings_setSetting(SETTINGS_KEY_REMINDERS, {})
             await self.settings_setSetting(SETTINGS_KEY_STOPWATCH, {
                 "status": "idle",
                 "start_time": None,
@@ -3349,7 +2909,7 @@ class Plugin:
             })
             await self.settings_setSetting("missed_alerts_items", [])
             
-            # 8. Reset Pomodoro stats
+            # 7. Reset Pomodoro stats
             await self.settings_setSetting("pomodoro_stats", {
                 "daily_focus_time": 0,
                 "daily_break_time": 0,
@@ -3365,14 +2925,13 @@ class Plugin:
                 "longest_streak": 0
             })
             
-            # 9. Commit all changes
+            # 8. Commit all changes
             await self.settings_commit()
             
-            # 10. Emit update events to frontend
+            # 9. Emit update events to frontend
             await decky.emit("alarme_settings_updated", DEFAULT_SETTINGS)
             await decky.emit("alarme_alarms_updated", [])
             await decky.emit("alarme_timers_updated", [])
-            await decky.emit("alarme_reminders_updated", [])
             await decky.emit("alarme_pomodoro_updated", {
                 "active": False,
                 "is_break": False,
@@ -3382,9 +2941,8 @@ class Plugin:
             })
             await decky.emit("alarme_missed_items_updated", [])
             
-            # 11. Restart background tasks
+            # 10. Restart background tasks
             self.alarm_check_task = self.loop.create_task(self._alarm_checker())
-            self.reminder_check_task = self.loop.create_task(self._reminder_checker())
             self.suspend_monitor_task = self.loop.create_task(self._suspend_monitor())
             
             decky.logger.info("AlarMe: Factory reset completed successfully")
@@ -3409,13 +2967,6 @@ class Plugin:
         if self.pomodoro_task:
             self.pomodoro_task.cancel()
         
-        # Cancel reminder checker
-        if self.reminder_check_task:
-            self.reminder_check_task.cancel()
-        for task in self.reminder_tasks.values():
-            task.cancel()
-        self.reminder_tasks.clear()
-
         # Cancel suspend monitor
         if self.suspend_monitor_task:
             self.suspend_monitor_task.cancel()

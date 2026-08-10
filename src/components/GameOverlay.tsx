@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { FaStopwatch, FaBell, FaBrain, FaRedo, FaShieldAlt, FaMoon, FaVolumeMute, FaHourglassHalf, FaBellSlash } from "react-icons/fa";
+import { FaStopwatch, FaBell, FaBrain, FaShieldAlt, FaMoon, FaVolumeMute, FaHourglassHalf, FaBellSlash } from "react-icons/fa";
 import { useSettings } from "../hooks/useSettings";
 import { useOverlayData } from "../hooks/useOverlayData";
 import { useGameStatus } from "../hooks/useGameStatus";
@@ -14,7 +14,6 @@ const CATEGORY_ICONS: Record<string, JSX.Element> = {
     timer: <FaHourglassHalf />,
     alarm: <FaBell />,
     pomodoro: <FaBrain />,
-    reminder: <FaRedo />,
     stopwatch: <FaStopwatch />
 };
 
@@ -44,7 +43,7 @@ function formatAlertTime(alert: OverlayAlert, use24h: boolean): string {
         return '0:00';
     }
 
-    // For alarms and reminders, show relative or absolute time
+    // For alarms, show relative or absolute time
     if (remaining <= 0) return 'Now';
     if (remaining < 60) return '<1m';
     if (remaining < 3600) {

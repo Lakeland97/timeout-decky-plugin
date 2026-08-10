@@ -40,7 +40,6 @@ export function useOverlayData(settings: UserSettings, isGameRunning?: boolean) 
         // Re-fetch when data sources change
         const handleTimersUpdated = () => fetchOverlayData();
         const handleAlarmsUpdated = () => fetchOverlayData();
-        const handleRemindersUpdated = () => fetchOverlayData();
         const handlePomodoroStarted = () => fetchOverlayData();
         const handlePomodoroStopped = () => fetchOverlayData();
         const handlePomodoroPhaseChanged = () => fetchOverlayData();
@@ -94,7 +93,6 @@ export function useOverlayData(settings: UserSettings, isGameRunning?: boolean) 
 
         addEventListener('alarme_timers_updated', handleTimersUpdated);
         addEventListener('alarme_alarms_updated', handleAlarmsUpdated);
-        addEventListener('alarme_reminders_updated', handleRemindersUpdated);
         addEventListener('alarme_pomodoro_started', handlePomodoroStarted);
         addEventListener('alarme_pomodoro_stopped', handlePomodoroStopped);
         addEventListener('alarme_pomodoro_phase_changed', handlePomodoroPhaseChanged);
@@ -108,7 +106,6 @@ export function useOverlayData(settings: UserSettings, isGameRunning?: boolean) 
         return () => {
             removeEventListener('alarme_timers_updated', handleTimersUpdated);
             removeEventListener('alarme_alarms_updated', handleAlarmsUpdated);
-            removeEventListener('alarme_reminders_updated', handleRemindersUpdated);
             removeEventListener('alarme_pomodoro_started', handlePomodoroStarted);
             removeEventListener('alarme_pomodoro_stopped', handlePomodoroStopped);
             removeEventListener('alarme_pomodoro_phase_changed', handlePomodoroPhaseChanged);
@@ -133,7 +130,6 @@ export function useOverlayData(settings: UserSettings, isGameRunning?: boolean) 
         settings.overlay_show_timers,
         settings.overlay_show_alarms,
         settings.overlay_show_pomodoros,
-        settings.overlay_show_reminders,
         settings.overlay_show_stopwatch,
         settings.overlay_time_window,
         settings.overlay_max_alerts,
