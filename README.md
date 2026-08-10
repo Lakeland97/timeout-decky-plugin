@@ -6,46 +6,47 @@ Play-time discipline, focus with teeth, and optional parental lockout for Steam 
 ![Version](https://img.shields.io/badge/release-v0.1.0-green)
 ![License](https://img.shields.io/badge/license-BSD--3--Clause-blue)
 
-> **Timeout is in early development.** Focus sessions work today. **Game Limits**, **Focus enforcement tiers**, and **Parental controls** are on the roadmap below.
+> **Timeout is in early development.**
 
 ## Features
 
-Strikethrough = shipped. Plain = planned.
+✓ = shipped. ✗ = planned.
 
 ### ⚡ Focus
-- ~~Focus sessions~~
-- ~~Statistics~~
-- ~~Skip controls~~
-- ~~Background persistence~~
+- ✓ Focus sessions
+- ✓ Statistics
+- ✓ Background persistence
+- ✗ Take-a-break
 
 ### 🔊 Custom sounds
-- ~~Import custom sounds~~
+- ✓ Import custom sounds
 
 ### 💤 Prevent sleep
-- ~~SteamOS sleep inhibition~~
+- ✓ SteamOS sleep inhibition
 
 ### 💾 Backup & restore
-- ~~Export/import backup~~
+- ✓ Export/import backup
 
 ### 🎮 Game Limits
-- Game selection
-- Limits
-- Budgets
-- Half-opens
-- Cooldowns
-- Curfew
-- Concession
+- ✗ Game selection
+- ✗ Limits
+- ✗ Budgets
+- ✗ Half-opens
+- ✗ Cooldowns
+- ✗ Curfew
+- ✗ Concession
 
 ### 🎯 Focus enforcement tiers
-- Loose
-- Steady
-- Strict
+- ✗ Loose
+- ✗ Steady
+- ✗ Strict
 
 ### 🔒 Parental controls + passcode
-- Self-control mode
-- Administrative lockout
+- ✗ Self-control mode
+- ✗ Administrative lockout
 
 ### 🔥 Streaks
+- ✗ Unified metric
 
 > [Open an issue](https://github.com/Lakeland97/timeout-decky-plugin/issues) if you have feedback.
 
