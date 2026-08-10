@@ -22,13 +22,11 @@ settings.read()
 
 # Settings keys
 SETTINGS_KEY_ALARMS = "alarms"
-SETTINGS_KEY_PRESETS = "presets"
 SETTINGS_KEY_SETTINGS = "user_settings"
 SETTINGS_KEY_POMODORO = "pomodoro_state"
 
 # Limits to prevent excessive data
 MAX_ALARMS = 100
-MAX_PRESETS = 50
 
 # Default user settings
 DEFAULT_SETTINGS = {
@@ -64,22 +62,9 @@ DEFAULT_SETTINGS = {
     "overlay_compact_mode": False,
     "overlay_show_prevent_sleep_badge": True,
     "overlay_show_missed_badge": True,
-    # Timer presets settings
-    "presets_enabled": True,
-    "presets_max_visible": 5,
     # Tab Order
     "tab_order": ["timers", "alarms", "pomodoro"]
 }
-
-# Default presets
-DEFAULT_PRESETS = [
-    {"id": "preset-5", "seconds": 300, "label": "5 minutes", "subtle_mode": False, "auto_suspend": False},
-    {"id": "preset-10", "seconds": 600, "label": "10 minutes", "subtle_mode": False, "auto_suspend": False},
-    {"id": "preset-15", "seconds": 900, "label": "15 minutes", "subtle_mode": False, "auto_suspend": False},
-    {"id": "preset-30", "seconds": 1800, "label": "30 minutes", "subtle_mode": False, "auto_suspend": False},
-    {"id": "preset-60", "seconds": 3600, "label": "1 hour", "subtle_mode": False, "auto_suspend": False},
-]
-
 
 class Plugin:
     alarm_check_task = None
@@ -1530,104 +1515,6 @@ class Plugin:
         await self.settings_setSetting(SETTINGS_KEY_POMODORO, state)
         await self.settings_commit()
 
-    # ==================== PRESET METHODS ====================
-
-    async def get_presets(self) -> list:
-        """Get all timer presets."""
-        presets = await self.settings_getSetting(SETTINGS_KEY_PRESETS, DEFAULT_PRESETS)
-        user_settings = await self._get_user_settings()
-        enabled = user_settings.get("presets_enabled", True)
-        max_visible = user_settings.get("presets_max_visible", 5) if enabled else 0
-        
-        if len(presets) > max_visible:
-            presets = presets[:max_visible]
-            # Silently fix the saved state if it was out of sync
-            await self.settings_setSetting(SETTINGS_KEY_PRESETS, presets)
-            await self.settings_commit()
-            
-        return presets
-
-    async def save_preset(self, seconds: int, label: str, 
-                          subtle_mode: bool = False, auto_suspend: bool = False,
-                          prevent_sleep: bool = False) -> dict:
-        """Save a new timer preset with all options. Overwrites oldest if max is reached.
-        Moves existing identical presets to the top instead of duplicating."""
-        user_settings = await self._get_user_settings()
-        enabled = user_settings.get("presets_enabled", True)
-        if not enabled:
-            decky.logger.warning("Timeout: Presets are disabled. Cannot save preset.")
-            return None
-            
-        presets = await self.get_presets()
-        max_visible = user_settings.get("presets_max_visible", 5)
-        
-        # Check for exact duplicate
-        existing_idx = -1
-        preset_id = str(uuid.uuid4())[:8]
-        
-        for i, p in enumerate(presets):
-            if (p.get("seconds") == seconds and 
-                p.get("label") == label and 
-                bool(p.get("subtle_mode", False)) == bool(subtle_mode) and 
-                bool(p.get("auto_suspend", False)) == bool(auto_suspend) and
-                bool(p.get("prevent_sleep", False)) == bool(prevent_sleep)):
-                existing_idx = i
-                preset_id = p.get("id")
-                break
-                
-        if existing_idx >= 0:
-            presets.pop(existing_idx)
-        
-        preset = {
-            "id": preset_id,
-            "seconds": seconds,
-            "label": label,
-            "subtle_mode": subtle_mode,
-            "auto_suspend": auto_suspend,
-            "prevent_sleep": prevent_sleep,
-        }
-        
-        # Insert at the beginning (index 0) so the newest is always visible
-        presets.insert(0, preset)
-        
-        # Enforce max limit by keeping only the newest
-        if len(presets) > max_visible:
-            decky.logger.info(f"Timeout: Preset limit reached ({max_visible}). Overwriting oldest preset.")
-            presets = presets[:max_visible]
-            
-        await self.settings_setSetting(SETTINGS_KEY_PRESETS, presets)
-        await self.settings_commit()
-        
-        decky.logger.info(f"Timeout: Created preset '{label}' ({seconds}s, subtle={subtle_mode}, suspend={auto_suspend}, prevent_sleep={prevent_sleep})")
-        await decky.emit("timeout_presets_updated", presets)
-        return preset
-
-    async def save_preset_from_timer(self, timer_id: str) -> dict:
-        """Create a preset from an active or paused timer."""
-        timers = await self._get_timers()
-        if timer_id not in timers:
-            decky.logger.warning(f"Timeout: Timer {timer_id} not found for preset creation")
-            return None
-        
-        timer = timers[timer_id]
-        return await self.save_preset(
-            seconds=timer.get("seconds", 300),
-            label=timer.get("label", "Timer"),
-            subtle_mode=timer.get("subtle_mode", False),
-            auto_suspend=timer.get("auto_suspend", False),
-            prevent_sleep=timer.get("prevent_sleep", False),
-        )
-
-    async def remove_preset(self, preset_id: str) -> bool:
-        """Remove a timer preset."""
-        presets = await self.get_presets()
-        presets = [p for p in presets if p.get("id") != preset_id]
-        await self.settings_setSetting(SETTINGS_KEY_PRESETS, presets)
-        await self.settings_commit()
-        
-        await decky.emit("timeout_presets_updated", presets)
-        return True
-
     # ==================== SETTINGS METHODS ====================
 
     async def get_version(self) -> str:
@@ -1652,15 +1539,6 @@ class Plugin:
         current.update(new_settings)
         await self.settings_setSetting(SETTINGS_KEY_SETTINGS, current)
         
-        # Truncate presets if max_visible is changed to prevent hidden presets
-        if "presets_max_visible" in new_settings:
-            max_visible = new_settings["presets_max_visible"]
-            presets = await self.get_presets()
-            if len(presets) > max_visible:
-                decky.logger.info(f"Timeout: Truncating presets list to {max_visible}")
-                presets = presets[:max_visible]
-                await self.settings_setSetting(SETTINGS_KEY_PRESETS, presets)
-                await decky.emit("timeout_presets_updated", presets)
         
         # Update sleep inhibitor if prevent_sleep settings changed
         if any(k in new_settings for k in ("pomodoro_prevent_sleep",)):
@@ -1785,12 +1663,11 @@ class Plugin:
         return {"alerts": combined, "settings": overlay_settings}
 
     async def export_backup(self) -> str:
-        """Export all user data (alarms, presets, settings, recent timers) to JSON string."""
+        """Export user data (alarms, settings) to JSON string."""
         data = {
             "version": 1,
             "timestamp": time.time(),
             "alarms": await self._get_alarms(),
-            "presets": await self.get_presets(),
             "user_settings": await self._get_user_settings()
         }
         return json.dumps(data, indent=2)
@@ -1849,10 +1726,6 @@ class Plugin:
                 await self._save_alarms(data["alarms"])
                 await self._emit_all_alarms()
                 
-            if "presets" in data:
-                await self.settings_setSetting(SETTINGS_KEY_PRESETS, data["presets"])
-                await self.settings_commit()
-                await decky.emit("timeout_presets_updated", data["presets"])
                 
                 
             if "user_settings" in data:
