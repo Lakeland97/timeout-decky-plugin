@@ -991,7 +991,7 @@ const FactoryResetPage = () => {
                                 <strong>Timeout</strong> {version ? `v${version}` : '…'}
                             </p>
                             <p>
-                                By Guilherme Lemos
+                                By Lakeland97
                             </p>
                         </div>
                     </Focusable>
