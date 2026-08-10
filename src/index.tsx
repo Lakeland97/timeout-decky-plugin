@@ -13,7 +13,7 @@ import {
     callable
 } from "@decky/api";
 import { showModal } from "@decky/ui";
-import { FaBell, FaCog, FaBrain, FaStopwatch, FaHourglassHalf, FaRedo, FaShieldAlt, FaMoon } from "react-icons/fa";
+import { FaBell, FaCog, FaBrain, FaStopwatch, FaHourglassHalf, FaRedo, FaShieldAlt } from "react-icons/fa";
 import { useState, useEffect, useRef, useMemo } from "react";
 
 // Components
@@ -29,7 +29,6 @@ import { ReminderNotification } from "./components/ReminderNotification";
 import { GameOverlay } from "./components/GameOverlay";
 import showMissedReportModal from "./components/MissedReportModal";
 import { showSleepInhibitorModal } from "./components/SleepInhibitorModal";
-import { ScreensaverOverlay } from "./components/ScreensaverOverlay";
 import { AlarMeUIComposition } from "./components/AlarMeUIComposition";
 import { playAlarmSound } from "./utils/sounds";
 import { SteamUtils } from "./utils/steam";
@@ -42,7 +41,6 @@ import { usePomodoro } from "./hooks/usePomodoro";
 import { useReminders } from "./hooks/useReminders";
 import { useGameStatus } from "./hooks/useGameStatus";
 import { useMissedAlerts } from "./hooks/useMissedAlerts";
-import { triggerScreensaverPreviewAfterClosingMenus } from "./hooks/useScreensaver";
 import { MODAL_ZINDEX_CSS } from "./utils/zIndex";
 
 // Types
@@ -219,7 +217,6 @@ function Content() {
         markAsSeen();
         showMissedReportModal(missedItems, use24h);
     };
-    const screensaverEnabled = (userSettings.screensaver_mode || 'off') !== 'off';
 
     return (
         <div ref={contentRef}>
@@ -293,7 +290,7 @@ function Content() {
 
                     {/* Sleep Inhibitor Button */}
                     <Focusable
-                        onActivate={(sleepInhibitorActive && screensaverEnabled) ? () => showSleepInhibitorModal(sleepInhibitorItems) : undefined}
+                        onActivate={sleepInhibitorActive ? () => showSleepInhibitorModal(sleepInhibitorItems) : undefined}
                         style={{
                             flex: '1 1 0',
                             minWidth: 0,
@@ -302,28 +299,28 @@ function Content() {
                             justifyContent: 'center',
                             gap: 6,
                             padding: 8,
-                            backgroundColor: (sleepInhibitorActive && screensaverEnabled) ? '#e6990022' : '#ffffff08',
+                            backgroundColor: sleepInhibitorActive ? '#e6990022' : '#ffffff08',
                             borderRadius: 12,
                             border: '2px solid transparent',
-                            cursor: (sleepInhibitorActive && screensaverEnabled) ? 'pointer' : 'default',
-                            opacity: (sleepInhibitorActive && screensaverEnabled) ? 1 : 0.6,
+                            cursor: sleepInhibitorActive ? 'pointer' : 'default',
+                            opacity: sleepInhibitorActive ? 1 : 0.6,
                             transition: 'all 0.1s ease-in-out'
                         }}
                         onFocus={(e: any) => {
-                            if (sleepInhibitorActive && screensaverEnabled) {
+                            if (sleepInhibitorActive) {
                                 e.target.style.backgroundColor = '#4488aa';
                                 e.target.style.borderColor = 'white';
                             }
                         }}
                         onBlur={(e: any) => {
-                            e.target.style.backgroundColor = (sleepInhibitorActive && screensaverEnabled) ? '#e6990022' : '#ffffff08';
+                            e.target.style.backgroundColor = sleepInhibitorActive ? '#e6990022' : '#ffffff08';
                             e.target.style.borderColor = 'transparent';
                         }}
                     >
-                        <FaShieldAlt size={14} style={{ color: (sleepInhibitorActive && screensaverEnabled) ? '#e69900' : '#666666' }} />
+                        <FaShieldAlt size={14} style={{ color: sleepInhibitorActive ? '#e69900' : '#666666' }} />
                         <span style={{
                             fontSize: 12,
-                            color: (sleepInhibitorActive && screensaverEnabled) ? '#e69900' : '#666666',
+                            color: sleepInhibitorActive ? '#e69900' : '#666666',
                             fontWeight: 500,
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
@@ -332,42 +329,6 @@ function Content() {
                             {sleepInhibitorActive ? 'Awake' : 'Sleep'}
                         </span>
                     </Focusable>
-
-                    {/* Screensaver Preview Button */}
-                    {(() => {
-                        const screensaverMode = userSettings.screensaver_mode || 'off';
-                        if (screensaverMode === 'off') return null;
-                        return (
-                            <Focusable
-                                onActivate={() => triggerScreensaverPreviewAfterClosingMenus()}
-                                style={{
-                                    flex: '0 0 auto',
-                                    padding: 8,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    backgroundColor: '#ffffff08',
-                                    borderRadius: 12,
-                                    border: '2px solid transparent',
-                                    cursor: 'pointer',
-                                    color: '#888888',
-                                    transition: 'all 0.1s ease-in-out'
-                                }}
-                                onFocus={(e: any) => {
-                                    e.target.style.backgroundColor = '#4488aa';
-                                    e.target.style.borderColor = 'white';
-                                    e.target.style.color = 'white';
-                                }}
-                                onBlur={(e: any) => {
-                                    e.target.style.backgroundColor = '#ffffff08';
-                                    e.target.style.borderColor = 'transparent';
-                                    e.target.style.color = '#888888';
-                                }}
-                            >
-                                <FaMoon size={16} />
-                            </Focusable>
-                        );
-                    })()}
 
                     {/* Settings Button */}
                     <Focusable
@@ -633,10 +594,6 @@ export default definePlugin(() => {
     const OVERLAY_COMPONENT_NAME = 'AlarMeGameOverlay';
     routerHook.addGlobalComponent(OVERLAY_COMPONENT_NAME, GameOverlay);
 
-    // Register screensaver overlay
-    const SCREENSAVER_COMPONENT_NAME = 'AlarMeScreensaverOverlay';
-    routerHook.addGlobalComponent(SCREENSAVER_COMPONENT_NAME, () => <ScreensaverOverlay />);
-
     const COMPOSITION_COMPONENT_NAME = 'AlarMeUIComposition';
     routerHook.addGlobalComponent(COMPOSITION_COMPONENT_NAME, AlarMeUIComposition);
 
@@ -661,7 +618,6 @@ export default definePlugin(() => {
             // Unregister settings route and overlay
             routerHook.removeRoute(SETTINGS_ROUTE);
             routerHook.removeGlobalComponent(OVERLAY_COMPONENT_NAME);
-            routerHook.removeGlobalComponent(SCREENSAVER_COMPONENT_NAME);
             routerHook.removeGlobalComponent(COMPOSITION_COMPONENT_NAME);
             if (unregisterGameListener) {
                 if (typeof unregisterGameListener === 'function') {
