@@ -1383,6 +1383,8 @@ class Plugin:
                 "pomodoro_sessions_until_long_break": "focus_sessions_until_long_break",
                 "pomodoro_suspend_behavior": "focus_suspend_behavior",
                 "pomodoro_stats": "focus_stats",
+                "pomodoro_daily_goal": "focus_daily_goal",
+                "pomodoro_daily_goal_enabled": "focus_daily_goal_enabled",
                 "overlay_show_pomodoros": "overlay_show_focus",
             }
             for _old, _new in _POMODORO_TO_FOCUS.items():
