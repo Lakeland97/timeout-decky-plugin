@@ -529,7 +529,7 @@ const OverlaySettingsPage = () => {
             <PanelSection title="About Overlay">
                 <PanelSectionRow>
                     <div style={{ fontSize: 12, color: '#aaaaaa', padding: '4px 0', lineHeight: 1.5 }}>
-                        A compact bar with upcoming timers and alarms.
+                        A compact bar with upcoming focus alerts.
                         It can render on top of the Steam UI <strong>and</strong> on top of running games or apps,
                         so you can keep an eye on your next alerts without leaving what you are doing.
                     </div>
@@ -741,26 +741,6 @@ const OverlaySettingsPage = () => {
                         <div style={{ padding: '0 16px 12px 16px', fontSize: 12, color: '#aaaaaa' }}>
                             Items with "Prevent Sleep" active will always bypass these settings and show in the overlay. Alerts in overlay are ordered by their due time (next alert first).
                         </div>
-                        <PanelSectionRow>
-                            <ToggleField
-                                icon={<FaHourglassHalf size={16} />}
-                                label="Timers"
-                                description="Show active timer countdowns"
-                                checked={settings.overlay_show_timers ?? true}
-                                onChange={(value) => updateSetting('overlay_show_timers', value)}
-                            />
-                        </PanelSectionRow>
-
-                        <PanelSectionRow>
-                            <ToggleField
-                                icon={<FaBell />}
-                                label="Alarms"
-                                description="Show upcoming alarms"
-                                checked={settings.overlay_show_alarms ?? true}
-                                onChange={(value) => updateSetting('overlay_show_alarms', value)}
-                            />
-                        </PanelSectionRow>
-
                         <PanelSectionRow>
                             <ToggleField
                                 icon={<FaBrain />}

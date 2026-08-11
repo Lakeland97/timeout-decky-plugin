@@ -40,8 +40,6 @@ const DEFAULT_SETTINGS: UserSettings = {
     overlay_opacity: 0.4,
     overlay_max_alerts: 2,
     overlay_time_window: 1,
-    overlay_show_timers: true,
-    overlay_show_alarms: true,
     overlay_show_focus: true,
     overlay_compact_mode: false,
     overlay_show_prevent_sleep_badge: true,
@@ -51,9 +49,6 @@ const DEFAULT_SETTINGS: UserSettings = {
     // Prevent Sleep settings
     prevent_sleep_enabled: false,
     prevent_sleep_timers: true,
-    prevent_sleep_focus: true,
-    prevent_sleep_alarms: false,
-    prevent_sleep_alarms_window: 60,  // default 1 hour
 };
 
 export function useSettings() {

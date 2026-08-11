@@ -54,7 +54,6 @@ DEFAULT_SETTINGS = {
     "overlay_opacity": 0.4,
     "overlay_max_alerts": 2,
     "overlay_time_window": 1,
-    "overlay_show_alarms": True,
     "overlay_show_focus": True,
     "overlay_compact_mode": False,
     "overlay_show_prevent_sleep_badge": True,
@@ -1399,7 +1398,9 @@ class Plugin:
         for _stale in list(updated.keys()):
             if (_stale.startswith("timer_") or _stale.startswith("alarm_")
                     or _stale.startswith("preset_") or _stale in (
-                        "overlay_show_timers", "overlay_show_alarms", "snooze_duration")):
+                        "overlay_show_timers", "overlay_show_alarms", "snooze_duration",
+                        "prevent_sleep_focus", "prevent_sleep_alarms",
+                        "prevent_sleep_alarms_window")):
                 del updated[_stale]
                 changed = True
 

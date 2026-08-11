@@ -76,8 +76,6 @@ export interface UserSettings {
     overlay_opacity: number;
     overlay_max_alerts: number;
     overlay_time_window: number;        // hours ahead to show
-    overlay_show_timers: boolean;
-    overlay_show_alarms: boolean;
     overlay_show_focus: boolean;
     overlay_compact_mode: boolean;
     overlay_show_prevent_sleep_badge: boolean;
@@ -85,9 +83,6 @@ export interface UserSettings {
     // Legacy Prevent Sleep settings (deprecated - now per-item)
     prevent_sleep_enabled?: boolean;
     prevent_sleep_timers?: boolean;
-    prevent_sleep_focus?: boolean;
-    prevent_sleep_alarms?: boolean;
-    prevent_sleep_alarms_window?: number;  // minutes before alarm to keep awake
     // Tab Order
     tab_order?: string[];
     // Pixel shift
@@ -147,7 +142,7 @@ export interface OverlayAlert {
     category: OverlayCategory;
     label: string;
     time: number;       // UNIX timestamp of trigger/end
-    remaining?: number; // seconds remaining (for timers/focus)
+    remaining?: number; // seconds remaining (for focus)
     subtle_mode?: boolean;
     auto_suspend?: boolean;
     prevent_sleep?: boolean;

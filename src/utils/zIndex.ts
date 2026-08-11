@@ -5,7 +5,7 @@
  *  - Game / app window:        rendered by gamescope (no CSS z-index)
  *  - Steam UI base:            Steam-managed
  *  - Game overlay (alerts bar) rendered above the game window.
- *  - Modal portals (snooze, focus, sleep blocker, etc.).
+ *  - Modal portals (focus, sleep blocker, etc.).
  *
  * Z-index values stay within the safe 32-bit signed integer space
  * Steam UI tolerates without breaking native popovers.
@@ -13,7 +13,7 @@
 export const Z_INDEX = {
     /** Default alerts overlay layer. */
     GAME_OVERLAY_BASE: 2147483645,
-    /** Modal portals (alarm snooze, focus, etc.). */
+    /** Modal portals (focus, sleep blocker, etc.). */
     MODAL_PORTAL: 2147483647,
 } as const;
 

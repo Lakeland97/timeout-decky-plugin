@@ -24,7 +24,7 @@ function showDisableAllConfirmModal(onConfirm: () => void) {
     showModal(
         <ConfirmModal
             strTitle="Disable All Sleep Blockers"
-            strDescription="This will stop all timers, end the focus session, and turn off all alarms that are preventing sleep. Are you sure?"
+            strDescription="This will disable all active sleep prevention. Are you sure?"
             strOKButtonText="Disable All"
             strCancelButtonText="Cancel"
             onOK={onConfirm}
