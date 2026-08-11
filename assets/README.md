@@ -21,14 +21,14 @@ Place your custom sound files in this folder. They will be available for selecti
 1. Add your sound file to this folder (e.g., `my-sound.mp3`)
 2. Rebuild the plugin: `pnpm run build`
 3. Redeploy to your Steam Deck
-4. The sound will appear in Settings under Timer/Alarm/Pomodoro Sound dropdowns
+4. The sound will appear in Settings under the Focus Sound dropdown
 
 ## Recommendations
 
 | Aspect | Recommendation |
 |--------|----------------|
 | File size | Under 500KB for quick loading |
-| Duration | 2-5 seconds for alarms |
+| Duration | 2-5 seconds for alerts |
 | Volume | Normalize audio levels |
 
 ## Royalty-Free Sound Sources

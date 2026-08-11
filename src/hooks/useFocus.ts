@@ -1,16 +1,16 @@
 import { useEffect, useState, useCallback } from 'react';
 import { addEventListener, removeEventListener, callable } from '@decky/api';
-import type { PomodoroState, PomodoroTickEvent } from '../types';
+import type { FocusState, FocusTickEvent } from '../types';
 
 // Backend callables
-const startPomodoroCall = callable<[], PomodoroState>('start_pomodoro');
-const stopPomodoroCall = callable<[], boolean>('stop_pomodoro');
-const skipPhaseCall = callable<[], PomodoroState>('skip_pomodoro_phase');
-const getPomodoroStateCall = callable<[], PomodoroState>('get_pomodoro_state');
-const resetStatsCall = callable<[], boolean>('reset_pomodoro_stats');
+const startFocusCall = callable<[], FocusState>('start_focus_session');
+const stopFocusCall = callable<[], boolean>('stop_focus_session');
+const skipPhaseCall = callable<[], FocusState>('skip_focus_phase');
+const getFocusStateCall = callable<[], FocusState>('get_focus_state');
+const resetStatsCall = callable<[], boolean>('reset_focus_stats');
 
-export function usePomodoro() {
-    const [state, setState] = useState<PomodoroState>({
+export function useFocus() {
+    const [state, setState] = useState<FocusState>({
         active: false,
         is_break: false,
         current_session: 0,
@@ -23,30 +23,30 @@ export function usePomodoro() {
     // Load initial state
     const loadState = useCallback(async () => {
         try {
-            const pomodoroState = await getPomodoroStateCall();
-            setState(pomodoroState);
+            const focusState = await getFocusStateCall();
+            setState(focusState);
         } catch (e) {
-            console.error('Failed to load Pomodoro state:', e);
+            console.error('Failed to load Focus state:', e);
         } finally {
             setLoading(false);
         }
     }, []);
 
-    // Start Pomodoro
-    const startPomodoro = useCallback(async () => {
+    // Start Focus
+    const startFocus = useCallback(async () => {
         try {
-            const newState = await startPomodoroCall();
+            const newState = await startFocusCall();
             setState(newState);
         } catch (e) {
-            console.error('Failed to start Pomodoro:', e);
+            console.error('Failed to start Focus:', e);
         }
     }, []);
 
-    // Stop Pomodoro
-    const stopPomodoro = useCallback(async () => {
+    // Stop Focus
+    const stopFocus = useCallback(async () => {
         try {
-            await stopPomodoroCall();
-            // Only reset timer-related fields, preserve stats
+            await stopFocusCall();
+            // Only reset countdown fields, preserve stats
             setState(prev => ({
                 ...prev,
                 active: false,
@@ -57,7 +57,7 @@ export function usePomodoro() {
                 remaining: 0
             }));
         } catch (e) {
-            console.error('Failed to stop Pomodoro:', e);
+            console.error('Failed to stop Focus:', e);
         }
     }, []);
 
@@ -73,7 +73,7 @@ export function usePomodoro() {
 
     // Event handlers
     useEffect(() => {
-        const handleTick = (event: PomodoroTickEvent) => {
+        const handleTick = (event: FocusTickEvent) => {
             setState(prev => ({
                 ...prev,
                 remaining: event.remaining,
@@ -85,31 +85,31 @@ export function usePomodoro() {
             }));
         };
 
-        const handlePhaseChange = (newState: PomodoroState) => {
+        const handlePhaseChange = (newState: FocusState) => {
             setState(newState);
         };
 
-        const handleStopped = (newState: PomodoroState) => {
+        const handleStopped = (newState: FocusState) => {
             setState(newState);
         };
 
-        addEventListener('timeout_pomodoro_tick', handleTick);
-        addEventListener('timeout_pomodoro_started', handlePhaseChange);
-        addEventListener('timeout_pomodoro_phase_changed', handlePhaseChange);
-        addEventListener('timeout_pomodoro_work_ended', handlePhaseChange);
-        addEventListener('timeout_pomodoro_break_ended', handlePhaseChange);
-        addEventListener('timeout_pomodoro_stopped', handleStopped);
+        addEventListener('timeout_focus_tick', handleTick);
+        addEventListener('timeout_focus_started', handlePhaseChange);
+        addEventListener('timeout_focus_phase_changed', handlePhaseChange);
+        addEventListener('timeout_focus_work_ended', handlePhaseChange);
+        addEventListener('timeout_focus_break_ended', handlePhaseChange);
+        addEventListener('timeout_focus_stopped', handleStopped);
 
         // Load initial data
         loadState();
 
         return () => {
-            removeEventListener('timeout_pomodoro_tick', handleTick);
-            removeEventListener('timeout_pomodoro_started', handlePhaseChange);
-            removeEventListener('timeout_pomodoro_phase_changed', handlePhaseChange);
-            removeEventListener('timeout_pomodoro_work_ended', handlePhaseChange);
-            removeEventListener('timeout_pomodoro_break_ended', handlePhaseChange);
-            removeEventListener('timeout_pomodoro_stopped', handleStopped);
+            removeEventListener('timeout_focus_tick', handleTick);
+            removeEventListener('timeout_focus_started', handlePhaseChange);
+            removeEventListener('timeout_focus_phase_changed', handlePhaseChange);
+            removeEventListener('timeout_focus_work_ended', handlePhaseChange);
+            removeEventListener('timeout_focus_break_ended', handlePhaseChange);
+            removeEventListener('timeout_focus_stopped', handleStopped);
         };
     }, [loadState]);
 
@@ -133,8 +133,8 @@ export function usePomodoro() {
         currentCycle: state.current_cycle || 1,
         remaining: state.remaining || 0,
         elapsedThisPhase: state.elapsed_this_phase || 0,
-        startPomodoro,
-        stopPomodoro,
+        startFocus,
+        stopFocus,
         skipPhase,
         resetStats,
         refresh: loadState

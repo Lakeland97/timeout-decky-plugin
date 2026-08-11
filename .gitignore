@@ -41,9 +41,10 @@ logs/
 .cache/
 
 # Docs
-docs/*
-!docs/superpowers/
+docs/
 CHANGELOG.md
 
-# Agent scratch (superpowers working area)
+# Agent scratch (superpowers / local tool working areas)
 .superpowers/
+.claude/
+.refact/

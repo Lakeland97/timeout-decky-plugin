@@ -17,41 +17,28 @@ import { FaBell, FaCog, FaBrain, FaHourglassHalf, FaShieldAlt } from "react-icon
 import { useState, useEffect, useRef, useMemo } from "react";
 
 // Components
-import { TimerPanel } from "./components/TimerPanel";
-import { AlarmPanel } from "./components/AlarmPanel";
-import { PomodoroPanel } from "./components/PomodoroPanel";
+import { FocusPanel } from "./components/FocusPanel";
 import { SettingsPage, SETTINGS_ROUTE, navigateToSettings } from "./components/SettingsModal";
-import { showSnoozeModal } from "./components/SnoozeModal";
-import { PomodoroNotification } from "./components/PomodoroNotification";
+import { FocusNotification } from "./components/FocusNotification";
 import { GameOverlay } from "./components/GameOverlay";
 import showMissedReportModal from "./components/MissedReportModal";
 import { showSleepInhibitorModal } from "./components/SleepInhibitorModal";
 import { TimeoutUIComposition } from "./components/TimeoutUIComposition";
 import { playAlarmSound } from "./utils/sounds";
-import { SteamUtils } from "./utils/steam";
-import { formatTime } from "./utils/time";
 import { useSettings } from "./hooks/useSettings";
 import { useSleepInhibitor } from "./hooks/useSleepInhibitor";
-import { useTimers } from "./hooks/useTimers";
-import { usePomodoro } from "./hooks/usePomodoro";
+import { useFocus } from "./hooks/useFocus";
 import { useMissedAlerts } from "./hooks/useMissedAlerts";
 import { MODAL_ZINDEX_CSS } from "./utils/zIndex";
 
 // Types
-import type {
-    TimerCompletedEvent,
-    AlarmTriggeredEvent,
-    PomodoroState,
-} from "./types";
+import type { FocusState } from "./types";
 
 // Backend callables
-const snoozeAlarm = callable<[alarm_id: string, minutes: number], boolean>('snooze_alarm');
-const snoozeTimerCall = callable<[timer_id: string, minutes: number], boolean>('snooze_timer');
-const cancelTimerCall = callable<[timer_id: string], boolean>('cancel_timer');
 const setGameRunning = callable<[is_running: boolean], void>('set_game_running');
 
 // Tab configuration
-type TabId = 'timers' | 'alarms' | 'pomodoro';
+type TabId = 'focus';
 
 interface Tab {
     id: TabId;
@@ -60,9 +47,7 @@ interface Tab {
 }
 
 const TABS: Tab[] = [
-    { id: 'timers', label: 'Timers', icon: <FaHourglassHalf size={16} /> },
-    { id: 'alarms', label: 'Alarms', icon: <FaBell size={16} /> },
-    { id: 'pomodoro', label: 'Focus', icon: <FaBrain size={16} /> },
+    { id: 'focus', label: 'Focus', icon: <FaBrain size={16} /> },
 ];
 
 // Tab Button Component
@@ -126,7 +111,7 @@ const TabButton = ({ tab, active, hasActiveItems, onClick }: TabButtonProps) => 
 
 // Main Content Component
 function Content() {
-    const [activeTab, setActiveTab] = useState<TabId>('timers');
+    const [activeTab, setActiveTab] = useState<TabId>('focus');
     const { settings: userSettings } = useSettings();
     const { isActive: sleepInhibitorActive, items: sleepInhibitorItems } = useSleepInhibitor();
     const { missedItems, hasMissedAlerts, hasNewMissedAlerts, markAsSeen } = useMissedAlerts();
@@ -134,12 +119,10 @@ function Content() {
     const contentRef = useRef<HTMLDivElement>(null);
 
     // Track active items for tab indicators
-    const { timers } = useTimers();
-    const { state: pomodoroState } = usePomodoro();
+    const { state: focusState } = useFocus();
 
     // Calculate which tabs have active items
-    const hasActiveTimers = timers.some(t => !t.paused);
-    const hasActivePomodoro = pomodoroState.active;
+    const hasActiveFocus = focusState.active;
 
     // Sort tabs based on settings, or use default order
     const orderedTabs = useMemo(() => {
@@ -361,8 +344,7 @@ function Content() {
                     >
                         {orderedTabs.map(tab => {
                             let hasActiveItems = false;
-                            if (tab.id === 'timers') hasActiveItems = hasActiveTimers;
-                            else if (tab.id === 'pomodoro') hasActiveItems = hasActivePomodoro;
+                            if (tab.id === 'focus') hasActiveItems = hasActiveFocus;
                             
                             return (
                                 <TabButton
@@ -379,9 +361,7 @@ function Content() {
             </PanelSection>
 
             {/* Tab Content */}
-            {activeTab === 'timers' && <TimerPanel />}
-            {activeTab === 'alarms' && <AlarmPanel />}
-            {activeTab === 'pomodoro' && <PomodoroPanel />}
+            {activeTab === 'focus' && <FocusPanel />}
         </div>
     );
 }
@@ -389,79 +369,7 @@ function Content() {
 // Plugin Definition
 export default definePlugin(() => {
     // Event handlers
-    const getTimeStr = (use24h: boolean = true) => {
-        const now = new Date();
-        return formatTime(now.getHours(), now.getMinutes(), use24h);
-    };
-
-    const handleTimerCompleted = (event: TimerCompletedEvent) => {
-        // Auto-suspend forces subtle mode (modal before suspend makes no sense)
-        const useSubtle = event.subtle || event.auto_suspend;
-        const use24h = event.time_format_24h ?? true;
-
-        if (useSubtle) {
-            toaster.toast({
-                title: "⏰ Timer Finished!",
-                body: `${event.label} • ${getTimeStr(use24h)}`
-            });
-            // Play sound briefly for non-subtle with auto-suspend
-            if (!event.subtle && event.auto_suspend) {
-                playAlarmSound(event.sound || 'alarm.mp3', event.volume);
-            }
-            // Suspend after toast is visible
-            if (event.auto_suspend) {
-                setTimeout(() => SteamUtils.suspend(), 3000);
-            }
-        } else {
-            showSnoozeModal({
-                id: event.id,
-                label: event.label,
-                type: 'timer',
-                sound: event.sound,
-                volume: event.volume,
-                use24h,
-                snoozeActivationDelay: event.snooze_activation_delay,
-                onSnooze: (minutes) => snoozeTimerCall(event.id, minutes),
-                onDismiss: () => cancelTimerCall(event.id),
-            });
-        }
-    };
-
-    const handleAlarmTriggered = (event: AlarmTriggeredEvent) => {
-        // Auto-suspend forces subtle mode (modal before suspend makes no sense)
-        const useSubtle = event.subtle || event.auto_suspend;
-        const use24h = event.time_format_24h ?? true;
-
-        if (useSubtle) {
-            toaster.toast({
-                title: "🔔 Alarm!",
-                body: `${event.label} • ${getTimeStr(use24h)}`
-            });
-            // Play sound briefly for non-subtle with auto-suspend
-            if (!event.subtle && event.auto_suspend) {
-                playAlarmSound(event.sound || 'alarm.mp3', event.volume);
-            }
-            // Suspend after toast is visible
-            if (event.auto_suspend) {
-                setTimeout(() => SteamUtils.suspend(), 3000);
-            }
-        } else {
-            showSnoozeModal({
-                id: event.id,
-                label: event.label,
-                type: 'alarm',
-                sound: event.sound,
-                volume: event.volume,
-                defaultSnoozeDuration: event.snooze_duration,
-                use24h,
-                snoozeActivationDelay: event.snooze_activation_delay,
-                onSnooze: (minutes) => snoozeAlarm(event.id, minutes),
-                onDismiss: () => { }
-            });
-        }
-    };
-
-    const handlePomodoroWorkEnded = (state: PomodoroState) => {
+    const handleFocusWorkEnded = (state: FocusState) => {
         if (state.subtle_mode) {
             // Play sound briefly for subtle mode
             playAlarmSound(state.sound || 'alarm.mp3', state.volume);
@@ -470,11 +378,11 @@ export default definePlugin(() => {
                 body: `Session ${state.current_session} complete.`
             });
         } else {
-            showModal(<PomodoroNotification sound={state.sound} volume={state.volume} />);
+            showModal(<FocusNotification sound={state.sound} volume={state.volume} />);
         }
     };
 
-    const handlePomodoroBreakEnded = (state: PomodoroState) => {
+    const handleFocusBreakEnded = (state: FocusState) => {
         if (state.subtle_mode) {
             // Play sound briefly for subtle mode
             playAlarmSound(state.sound || 'alarm.mp3', state.volume);
@@ -483,15 +391,13 @@ export default definePlugin(() => {
                 body: `Ready for session ${state.current_session}?`
             });
         } else {
-            showModal(<PomodoroNotification sound={state.sound} volume={state.volume} />);
+            showModal(<FocusNotification sound={state.sound} volume={state.volume} />);
         }
     };
 
     // Register event listeners
-    addEventListener('timeout_timer_completed', handleTimerCompleted);
-    addEventListener('timeout_alarm_triggered', handleAlarmTriggered);
-    addEventListener('timeout_pomodoro_work_ended', handlePomodoroWorkEnded);
-    addEventListener('timeout_pomodoro_break_ended', handlePomodoroBreakEnded);
+    addEventListener('timeout_focus_work_ended', handleFocusWorkEnded);
+    addEventListener('timeout_focus_break_ended', handleFocusBreakEnded);
 
     // Missed items toast
     addEventListener('timeout_missed_items_toast', (count: number) => {
@@ -565,10 +471,8 @@ export default definePlugin(() => {
         alwaysRender: true, // Keep plugin state active for overlay visibility
 
         onDismount: () => {
-            removeEventListener('timeout_timer_completed', handleTimerCompleted);
-            removeEventListener('timeout_alarm_triggered', handleAlarmTriggered);
-            removeEventListener('timeout_pomodoro_work_ended', handlePomodoroWorkEnded);
-            removeEventListener('timeout_pomodoro_break_ended', handlePomodoroBreakEnded);
+            removeEventListener('timeout_focus_work_ended', handleFocusWorkEnded);
+            removeEventListener('timeout_focus_break_ended', handleFocusBreakEnded);
             // Unregister settings route and overlay
             routerHook.removeRoute(SETTINGS_ROUTE);
             routerHook.removeGlobalComponent(OVERLAY_COMPONENT_NAME);

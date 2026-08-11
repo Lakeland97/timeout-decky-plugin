@@ -1,7 +1,7 @@
 import { ConfirmModal, Focusable } from "@decky/ui";
 import { callable } from "@decky/api";
 import { FaStop, FaCoffee, FaBrain } from "react-icons/fa";
-import { usePomodoro } from "../hooks/usePomodoro";
+import { useFocus } from "../hooks/useFocus";
 import { useSettings } from "../hooks/useSettings";
 import { useGameStatus } from "../hooks/useGameStatus";
 import { formatDuration } from "../utils/time";
@@ -12,15 +12,15 @@ import { useUIComposition, UIComposition } from "../utils/uiComposition";
 // Backend callable for base64 sound data
 const getSoundDataCall = callable<[filename: string], { success: boolean; data: string | null; mime_type: string | null; error?: string }>('get_sound_data');
 
-// Focusable button with highlight (Consistent with SnoozeModal)
-interface PomodoroButtonProps {
+// Focusable button with highlight
+interface FocusButtonProps {
     label: string | React.ReactNode;
     onClick: () => void;
     isPrimary?: boolean;
     icon?: React.ReactNode;
 }
 
-const PomodoroButton = ({ label, onClick, isPrimary, icon }: PomodoroButtonProps) => {
+const FocusButton = ({ label, onClick, isPrimary, icon }: FocusButtonProps) => {
     const [focused, setFocused] = useState(false);
 
     return (
@@ -52,7 +52,7 @@ const PomodoroButton = ({ label, onClick, isPrimary, icon }: PomodoroButtonProps
     );
 };
 
-export const PomodoroNotification = ({ closeModal, sound, volume }: { closeModal?: () => void, sound?: string, volume?: number }) => {
+export const FocusNotification = ({ closeModal, sound, volume }: { closeModal?: () => void, sound?: string, volume?: number }) => {
     useUIComposition(UIComposition.Opaque);
 
     const {
@@ -61,10 +61,10 @@ export const PomodoroNotification = ({ closeModal, sound, volume }: { closeModal
         currentSession,
         currentCycle,
         remaining,
-        startPomodoro,
-        stopPomodoro,
+        startFocus,
+        stopFocus,
         skipPhase
-    } = usePomodoro();
+    } = useFocus();
     const { settings } = useSettings();
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const blobUrlRef = useRef<string | null>(null);
@@ -80,7 +80,7 @@ export const PomodoroNotification = ({ closeModal, sound, volume }: { closeModal
             try {
                 const result = await getSoundDataCall(soundFile);
                 if (!result.success || !result.data || !result.mime_type) {
-                    console.error('[Timeout] PomodoroNotification: Failed to load custom sound:', result.error);
+                    console.error('[Timeout] FocusNotification: Failed to load custom sound:', result.error);
                     return;
                 }
 
@@ -92,9 +92,9 @@ export const PomodoroNotification = ({ closeModal, sound, volume }: { closeModal
                 audio.loop = true; // Keep playing until dismissed
                 await audio.play();
                 audioRef.current = audio;
-                console.log('[Timeout] PomodoroNotification: Custom sound playing');
+                console.log('[Timeout] FocusNotification: Custom sound playing');
             } catch (e) {
-                console.error('[Timeout] PomodoroNotification: Failed to play custom sound:', e);
+                console.error('[Timeout] FocusNotification: Failed to play custom sound:', e);
             }
         };
 
@@ -143,10 +143,10 @@ export const PomodoroNotification = ({ closeModal, sound, volume }: { closeModal
         return () => clearTimeout(timer);
     }, [isGameRunning, settings.snooze_activation_delay]);
 
-    const workDuration = settings.pomodoro_work_duration * 60;
-    const breakDuration = settings.pomodoro_break_duration * 60;
-    const longBreakDuration = settings.pomodoro_long_break_duration * 60;
-    const sessionsUntilLong = settings.pomodoro_sessions_until_long_break;
+    const workDuration = settings.focus_work_duration * 60;
+    const breakDuration = settings.focus_break_duration * 60;
+    const longBreakDuration = settings.focus_long_break_duration * 60;
+    const sessionsUntilLong = settings.focus_sessions_until_long_break;
 
     const getCurrentPhaseDuration = () => {
         if (!isActive) return workDuration;
@@ -187,7 +187,7 @@ export const PomodoroNotification = ({ closeModal, sound, volume }: { closeModal
     const handleStop = async () => {
         if (!canInteract) return;
         stopPlayingSound();
-        await stopPomodoro();
+        await stopFocus();
         closeModal?.();
     };
 
@@ -200,7 +200,7 @@ export const PomodoroNotification = ({ closeModal, sound, volume }: { closeModal
     const handleStart = async () => {
         if (!canInteract) return;
         stopPlayingSound();
-        await startPomodoro();
+        await startFocus();
         closeModal?.();
     };
 
@@ -221,7 +221,7 @@ export const PomodoroNotification = ({ closeModal, sound, volume }: { closeModal
 
     return (
         <ConfirmModal
-            strTitle="Pomodoro Timer"
+            strTitle="Focus Timer"
             strDescription=""
             strOKButtonText={getOKButtonText()}
             strCancelButtonText="Dismiss"
@@ -298,7 +298,7 @@ export const PomodoroNotification = ({ closeModal, sound, volume }: { closeModal
                 <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
                     {isActive && (
                         <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-                            <PomodoroButton
+                            <FocusButton
                                 label="Stop Session"
                                 onClick={handleStop}
                                 icon={<FaStop />}

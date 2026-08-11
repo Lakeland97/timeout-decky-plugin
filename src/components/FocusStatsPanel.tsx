@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Focusable, PanelSection, PanelSectionRow, ButtonItem, ConfirmModal, showModal } from "@decky/ui";
-import type { PomodoroStats } from "../types";
+import type { FocusStats } from "../types";
 
-interface PomodoroStatsPanelProps {
-    stats: PomodoroStats | undefined;
+interface FocusStatsPanelProps {
+    stats: FocusStats | undefined;
     elapsedThisPhase: number;
     isActive: boolean;
     isBreak: boolean;
@@ -55,7 +55,7 @@ const VIEW_MODES: { mode: ViewMode; label: string }[] = [
     { mode: 'lifetime', label: 'Lifetime' }
 ];
 
-export function PomodoroStatsPanel({
+export function FocusStatsPanel({
     stats,
     elapsedThisPhase,
     isActive,
@@ -63,7 +63,7 @@ export function PomodoroStatsPanel({
     onResetStats,
     dailyGoalEnabled = false,
     dailyGoalHours = 4
-}: PomodoroStatsPanelProps) {
+}: FocusStatsPanelProps) {
     const [viewMode, setViewMode] = useState<ViewMode>('today');
 
     // Calculate live pending time (only for work phases)

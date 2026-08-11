@@ -1,6 +1,6 @@
 import { ConfirmModal, showModal, Focusable } from "@decky/ui";
 import { callable } from "@decky/api";
-import { FaBell, FaHourglassHalf, FaBrain, FaShieldAlt } from "react-icons/fa";
+import { FaBrain, FaShieldAlt } from "react-icons/fa";
 import { useUIComposition, UIComposition } from "../utils/uiComposition";
 
 const disableAllSleepInhibitors = callable<[], boolean>('disable_all_sleep_inhibitors');
@@ -24,7 +24,7 @@ function showDisableAllConfirmModal(onConfirm: () => void) {
     showModal(
         <ConfirmModal
             strTitle="Disable All Sleep Blockers"
-            strDescription="This will stop all timers, end the focus session, and turn off all alarms that are preventing sleep. Are you sure?"
+            strDescription="This will disable all active sleep prevention. Are you sure?"
             strOKButtonText="Disable All"
             strCancelButtonText="Cancel"
             onOK={onConfirm}
@@ -48,18 +48,14 @@ function SleepInhibitorModalContent({ items, closeModal }: SleepInhibitorModalPr
 
     const getIcon = (type: string) => {
         switch (type) {
-            case 'alarm': return <FaBell />;
-            case 'timer': return <FaHourglassHalf />;
-            case 'pomodoro': return <FaBrain />;
+            case 'focus': return <FaBrain />;
             default: return <FaShieldAlt />;
         }
     };
 
     const getTypeLabel = (type: string) => {
         switch (type) {
-            case 'alarm': return 'Alarm';
-            case 'timer': return 'Timer';
-            case 'pomodoro': return 'Focus Session';
+            case 'focus': return 'Focus Session';
             default: return type;
         }
     };

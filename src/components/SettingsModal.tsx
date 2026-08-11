@@ -12,11 +12,11 @@ import {
     ToggleField
 } from "@decky/ui";
 import { callable } from "@decky/api";
-import { FaVolumeUp, FaBell, FaClock, FaBrain, FaCoffee, FaPlay, FaPause, FaHourglassHalf, FaSave, FaFileImport, FaBullseye, FaMusic, FaTrash, FaCog, FaDatabase, FaEye, FaGamepad, FaHistory, FaBellSlash, FaStar, FaShieldAlt } from "react-icons/fa";
+import { FaVolumeUp, FaBell, FaClock, FaBrain, FaCoffee, FaPlay, FaPause, FaHourglassHalf, FaSave, FaFileImport, FaBullseye, FaMusic, FaTrash, FaCog, FaDatabase, FaEye, FaGamepad, FaHistory, FaBellSlash, FaShieldAlt } from "react-icons/fa";
 import { useEffect, useState, useRef } from "react";
 import { useSettings } from "../hooks/useSettings";
 import { useUIComposition, UIComposition } from "../utils/uiComposition";
-import { useAlarms } from "../hooks/useAlarms";
+import { useSounds } from "../hooks/useSounds";
 import { playAlarmSound } from "../utils/sounds";
 import { showExportModal, showImportModal } from "./BackupModals";
 import { BinarySelector } from "./BinarySelector";
@@ -120,115 +120,10 @@ const SoundPreviewButton = ({
 // Binary selector for suspend behavior options
 // ==================== BinarySelector is now in ./BinarySelector.tsx ====================
 
-// Timer Settings Page
-const TimerSettingsPage = () => {
+// Focus Settings Page
+const FocusSettingsPage = () => {
     const { settings, updateSetting } = useSettings();
-    const { getSounds, playCustomSound } = useAlarms();
-    const [sounds, setSounds] = useState<SoundFile[]>([{ filename: 'alarm.mp3', name: 'Alarm' }]);
-
-    useEffect(() => {
-        getSounds().then(setSounds);
-    }, []);
-
-    return (
-        <ScrollableContent>
-            <PanelSection>
-                <PanelSectionRow>
-                    <Focusable flow-children="row" style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
-                        <FaHourglassHalf style={{ color: '#888', flexShrink: 0 }} />
-                        <span style={{ flexShrink: 0 }}>Sound</span>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                            <Dropdown
-                                rgOptions={sounds.map(s => ({ data: s.filename, label: s.name }))}
-                                selectedOption={settings.timer_sound || 'alarm.mp3'}
-                                onChange={(option) => updateSetting('timer_sound', option.data as string)}
-                                strDefaultLabel="Select Sound"
-                            />
-                        </div>
-                        {settings.timer_sound !== 'soundless' && (
-                            <SoundPreviewButton soundFile={settings.timer_sound || 'alarm.mp3'} onPlayCustom={playCustomSound} />
-                        )}
-                    </Focusable>
-                </PanelSectionRow>
-
-                {settings.timer_sound !== 'soundless' && (
-                    <PanelSectionRow>
-                        <SliderField
-                            label="Volume"
-                            description={`${settings.timer_volume ?? 100}%`}
-                            value={settings.timer_volume ?? 100}
-                            min={0}
-                            max={100}
-                            step={5}
-                            onChange={(value) => updateSetting('timer_volume', value)}
-                            icon={<FaVolumeUp size={16} />}
-                        />
-                    </PanelSectionRow>
-                )}
-
-                <PanelSectionRow>
-                    <ToggleField
-                        icon={<FaStar size={16} />}
-                        label="Saved Presets"
-                        description="Show preset buttons for quickly starting timers"
-                        checked={settings.presets_enabled ?? true}
-                        onChange={(value) => updateSetting('presets_enabled', value)}
-                    />
-                </PanelSectionRow>
-                {settings.presets_enabled && (
-                    <PanelSectionRow>
-                        <div style={{ paddingLeft: '40px' }}>
-                            <SliderField
-                                label="Max Visible Presets"
-                                description={`${settings.presets_max_visible ?? 5} presets`}
-                                value={settings.presets_max_visible ?? 5}
-                                min={1}
-                                max={10}
-                                step={1}
-                                onChange={(value) => updateSetting('presets_max_visible', value)}
-                                icon={<FaClock size={16} />}
-                            />
-                        </div>
-                    </PanelSectionRow>
-                )}
-            </PanelSection>
-        </ScrollableContent>
-    );
-};
-
-// Alarm Settings Page
-const AlarmSettingsPage = () => {
-    const { settings, updateSetting } = useSettings();
-
-    return (
-        <ScrollableContent>
-            <PanelSection>
-                <PanelSectionRow>
-                    <SliderField
-                        label="Default Snooze Duration"
-                        description={`${settings.snooze_duration} minutes`}
-                        value={settings.snooze_duration}
-                        min={1}
-                        max={30}
-                        step={1}
-                        onChange={(value) => updateSetting('snooze_duration', value)}
-                        icon={<FaBell size={16} />}
-                    />
-                </PanelSectionRow>
-                <PanelSectionRow>
-                    <div style={{ fontSize: 12, color: '#888888', padding: '4px 0' }}>
-                        💡 Volume, sound, and other settings are configured per-alarm in the alarm editor.
-                    </div>
-                </PanelSectionRow>
-            </PanelSection>
-        </ScrollableContent>
-    );
-};
-
-// Pomodoro Settings Page
-const PomodoroSettingsPage = () => {
-    const { settings, updateSetting } = useSettings();
-    const { getSounds, playCustomSound } = useAlarms();
+    const { getSounds, playCustomSound } = useSounds();
     const [sounds, setSounds] = useState<SoundFile[]>([{ filename: 'alarm.mp3', name: 'Alarm' }]);
 
     useEffect(() => {
@@ -245,27 +140,27 @@ const PomodoroSettingsPage = () => {
                         <div style={{ flex: 1, minWidth: 0 }}>
                             <Dropdown
                                 rgOptions={sounds.map(s => ({ data: s.filename, label: s.name }))}
-                                selectedOption={settings.pomodoro_sound || 'alarm.mp3'}
-                                onChange={(option) => updateSetting('pomodoro_sound', option.data as string)}
+                                selectedOption={settings.focus_sound || 'alarm.mp3'}
+                                onChange={(option) => updateSetting('focus_sound', option.data as string)}
                                 strDefaultLabel="Select Sound"
                             />
                         </div>
-                        {settings.pomodoro_sound !== 'soundless' && (
-                            <SoundPreviewButton soundFile={settings.pomodoro_sound || 'alarm.mp3'} onPlayCustom={playCustomSound} />
+                        {settings.focus_sound !== 'soundless' && (
+                            <SoundPreviewButton soundFile={settings.focus_sound || 'alarm.mp3'} onPlayCustom={playCustomSound} />
                         )}
                     </Focusable>
                 </PanelSectionRow>
 
-                {settings.pomodoro_sound !== 'soundless' && (
+                {settings.focus_sound !== 'soundless' && (
                     <PanelSectionRow>
                         <SliderField
                             label="Volume"
-                            description={`${settings.pomodoro_volume ?? 100}%`}
-                            value={settings.pomodoro_volume ?? 100}
+                            description={`${settings.focus_volume ?? 100}%`}
+                            value={settings.focus_volume ?? 100}
                             min={0}
                             max={100}
                             step={5}
-                            onChange={(value) => updateSetting('pomodoro_volume', value)}
+                            onChange={(value) => updateSetting('focus_volume', value)}
                             icon={<FaVolumeUp size={16} />}
                         />
                     </PanelSectionRow>
@@ -274,12 +169,12 @@ const PomodoroSettingsPage = () => {
                 <PanelSectionRow>
                     <SliderField
                         label="Work Duration"
-                        description={`${settings.pomodoro_work_duration} minutes`}
-                        value={settings.pomodoro_work_duration}
+                        description={`${settings.focus_work_duration} minutes`}
+                        value={settings.focus_work_duration}
                         min={15}
                         max={60}
                         step={5}
-                        onChange={(value) => updateSetting('pomodoro_work_duration', value)}
+                        onChange={(value) => updateSetting('focus_work_duration', value)}
                         icon={<FaBrain size={16} />}
                     />
                 </PanelSectionRow>
@@ -287,12 +182,12 @@ const PomodoroSettingsPage = () => {
                 <PanelSectionRow>
                     <SliderField
                         label="Short Break"
-                        description={`${settings.pomodoro_break_duration} minutes`}
-                        value={settings.pomodoro_break_duration}
+                        description={`${settings.focus_break_duration} minutes`}
+                        value={settings.focus_break_duration}
                         min={3}
                         max={15}
                         step={1}
-                        onChange={(value) => updateSetting('pomodoro_break_duration', value)}
+                        onChange={(value) => updateSetting('focus_break_duration', value)}
                         icon={<FaCoffee size={16} />}
                     />
                 </PanelSectionRow>
@@ -300,12 +195,12 @@ const PomodoroSettingsPage = () => {
                 <PanelSectionRow>
                     <SliderField
                         label="Long Break"
-                        description={`${settings.pomodoro_long_break_duration} minutes`}
-                        value={settings.pomodoro_long_break_duration}
+                        description={`${settings.focus_long_break_duration} minutes`}
+                        value={settings.focus_long_break_duration}
                         min={10}
                         max={45}
                         step={5}
-                        onChange={(value) => updateSetting('pomodoro_long_break_duration', value)}
+                        onChange={(value) => updateSetting('focus_long_break_duration', value)}
                         icon={<FaCoffee size={16} />}
                     />
                 </PanelSectionRow>
@@ -313,12 +208,12 @@ const PomodoroSettingsPage = () => {
                 <PanelSectionRow>
                     <SliderField
                         label="Sessions Until Long Break"
-                        description={`${settings.pomodoro_sessions_until_long_break} sessions`}
-                        value={settings.pomodoro_sessions_until_long_break}
+                        description={`${settings.focus_sessions_until_long_break} sessions`}
+                        value={settings.focus_sessions_until_long_break}
                         min={2}
                         max={8}
                         step={1}
-                        onChange={(value) => updateSetting('pomodoro_sessions_until_long_break', value)}
+                        onChange={(value) => updateSetting('focus_sessions_until_long_break', value)}
                         icon={<FaClock size={16} />}
                     />
                 </PanelSectionRow>
@@ -328,21 +223,21 @@ const PomodoroSettingsPage = () => {
                         icon={<FaBullseye size={16} />}
                         label="Daily Goal"
                         description="Track progress toward a daily focus time goal"
-                        checked={settings.pomodoro_daily_goal_enabled ?? false}
-                        onChange={(value) => updateSetting('pomodoro_daily_goal_enabled', value)}
+                        checked={settings.focus_daily_goal_enabled ?? false}
+                        onChange={(value) => updateSetting('focus_daily_goal_enabled', value)}
                     />
                 </PanelSectionRow>
 
-                {settings.pomodoro_daily_goal_enabled && (
+                {settings.focus_daily_goal_enabled && (
                     <PanelSectionRow>
                         <SliderField
                             label="Daily Goal Hours"
-                            description={`${settings.pomodoro_daily_goal ?? 4} hours`}
-                            value={settings.pomodoro_daily_goal ?? 4}
+                            description={`${settings.focus_daily_goal ?? 4} hours`}
+                            value={settings.focus_daily_goal ?? 4}
                             min={1}
                             max={8}
                             step={1}
-                            onChange={(value) => updateSetting('pomodoro_daily_goal', value)}
+                            onChange={(value) => updateSetting('focus_daily_goal', value)}
                             icon={<FaClock size={16} />}
                         />
                     </PanelSectionRow>
@@ -353,8 +248,8 @@ const PomodoroSettingsPage = () => {
                     description="What happens when device is sleeping"
                     leftOption={{ value: 'pause', label: 'Shift (Pause)' }}
                     rightOption={{ value: 'continue', label: 'Miss (Continue)' }}
-                    value={settings.pomodoro_suspend_behavior || 'continue'}
-                    onChange={(val) => updateSetting('pomodoro_suspend_behavior', val as 'continue' | 'pause')}
+                    value={settings.focus_suspend_behavior || 'continue'}
+                    onChange={(val) => updateSetting('focus_suspend_behavior', val as 'continue' | 'pause')}
                     icon={<FaBrain size={16} />}
                 />
             </PanelSection>
@@ -364,17 +259,15 @@ const PomodoroSettingsPage = () => {
 
 // Tab labels for display
 const TAB_LABELS: Record<string, string> = {
-    "timers": "Timers",
-    "alarms": "Alarms",
-    "pomodoro": "Focus",
+    "focus": "Focus",
 };
 
-const DEFAULT_TAB_ORDER = ["timers", "alarms", "pomodoro"];
+const DEFAULT_TAB_ORDER = ["focus"];
 
 // General Settings Page
 const GeneralSettingsPage = () => {
     const { settings, updateSetting } = useSettings();
-    const { importCustomSounds } = useAlarms();
+    const { importCustomSounds } = useSounds();
     const [importStatus, setImportStatus] = useState<{ message: string; success: boolean } | null>(null);
 
     const tabOrder = settings.tab_order && settings.tab_order.length === DEFAULT_TAB_ORDER.length 
@@ -532,7 +425,7 @@ const GeneralSettingsPage = () => {
                     <ToggleField
                         icon={<FaBellSlash size={16} />}
                         label="Missed Alert Detection"
-                        description="Notify about alarms and timers missed while suspended"
+                        description="Notify about focus sessions missed while suspended"
                         checked={settings.missed_alerts_enabled ?? true}
                         onChange={(value) => updateSetting('missed_alerts_enabled', value)}
                     />
@@ -636,7 +529,7 @@ const OverlaySettingsPage = () => {
             <PanelSection title="About Overlay">
                 <PanelSectionRow>
                     <div style={{ fontSize: 12, color: '#aaaaaa', padding: '4px 0', lineHeight: 1.5 }}>
-                        A compact bar with upcoming timers and alarms.
+                        A compact bar with upcoming focus alerts.
                         It can render on top of the Steam UI <strong>and</strong> on top of running games or apps,
                         so you can keep an eye on your next alerts without leaving what you are doing.
                     </div>
@@ -850,31 +743,11 @@ const OverlaySettingsPage = () => {
                         </div>
                         <PanelSectionRow>
                             <ToggleField
-                                icon={<FaHourglassHalf size={16} />}
-                                label="Timers"
-                                description="Show active timer countdowns"
-                                checked={settings.overlay_show_timers ?? true}
-                                onChange={(value) => updateSetting('overlay_show_timers', value)}
-                            />
-                        </PanelSectionRow>
-
-                        <PanelSectionRow>
-                            <ToggleField
-                                icon={<FaBell />}
-                                label="Alarms"
-                                description="Show upcoming alarms"
-                                checked={settings.overlay_show_alarms ?? true}
-                                onChange={(value) => updateSetting('overlay_show_alarms', value)}
-                            />
-                        </PanelSectionRow>
-
-                        <PanelSectionRow>
-                            <ToggleField
                                 icon={<FaBrain />}
-                                label="Pomodoro"
+                                label="Focus"
                                 description="Show active focus/break countdown"
-                                checked={settings.overlay_show_pomodoros ?? true}
-                                onChange={(value) => updateSetting('overlay_show_pomodoros', value)}
+                                checked={settings.overlay_show_focus ?? true}
+                                onChange={(value) => updateSetting('overlay_show_focus', value)}
                             />
                         </PanelSectionRow>
 
@@ -915,7 +788,7 @@ const showFactoryResetConfirm = (onConfirm: () => void) => {
     showModal(
         <ConfirmModal
             strTitle="Factory Reset"
-            strDescription="This will permanently delete all alarms, timers, Pomodoro data, and reset all settings to defaults. Custom sounds in ~/Music/Timeout_Sounds will NOT be deleted. This action cannot be undone."
+            strDescription="This will permanently delete all Focus data and reset all settings to defaults. Custom sounds in ~/Music/Timeout_Sounds will NOT be deleted. This action cannot be undone."
             strOKButtonText="Reset Everything"
             strCancelButtonText="Cancel"
             onOK={onConfirm}
@@ -956,7 +829,7 @@ const FactoryResetPage = () => {
             <PanelSection>
                 <PanelSectionRow>
                     <div style={{ fontSize: 13, color: '#cccccc', padding: '8px 0' }}>
-                        Reset all settings to defaults and delete all data including alarms, timers, and Pomodoro sessions.
+                        Reset all settings to defaults and delete all data including Focus sessions.
                     </div>
                 </PanelSectionRow>
                 <PanelSectionRow>
@@ -1019,19 +892,9 @@ export const SettingsPage = () => {
             content: <GeneralSettingsPage />
         },
         {
-            title: "Timers",
-            icon: <FaHourglassHalf size={16} />,
-            content: <TimerSettingsPage />
-        },
-        {
-            title: "Alarms",
-            icon: <FaBell size={16} />,
-            content: <AlarmSettingsPage />
-        },
-        {
-            title: "Pomodoro",
+            title: "Focus",
             icon: <FaBrain size={16} />,
-            content: <PomodoroSettingsPage />
+            content: <FocusSettingsPage />
         },
         {
             title: "Overlay",

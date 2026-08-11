@@ -1,44 +1,29 @@
 import { useEffect, useState, useCallback } from 'react';
 import { addEventListener, removeEventListener, callable } from '@decky/api';
-import type { UserSettings, Preset } from '../types';
+import type { UserSettings } from '../types';
 
 // Backend callables
 const getSettingsCall = callable<[], UserSettings>('get_settings');
 const updateSettingsCall = callable<[settings: Partial<UserSettings>], UserSettings>('update_settings');
-const getPresetsCall = callable<[], Preset[]>('get_presets');
-const savePresetCall = callable<[seconds: number, label: string, subtle_mode?: boolean, auto_suspend?: boolean], Preset>('save_preset');
-const savePresetFromTimerCall = callable<[timer_id: string], Preset>('save_preset_from_timer');
-const removePresetCall = callable<[preset_id: string], boolean>('remove_preset');
 
 const DEFAULT_SETTINGS: UserSettings = {
-    snooze_duration: 5,
     time_format_24h: true,
-    // Timer settings
-    timer_sound: 'alarm.mp3',
-    timer_volume: 100,
-    timer_subtle_mode: false,
-    timer_auto_suspend: false,
-    timer_prevent_sleep: false,
-    // Pomodoro settings
-    pomodoro_sound: 'alarm.mp3',
-    pomodoro_volume: 100,
-    pomodoro_subtle_mode: false,
-    pomodoro_prevent_sleep: false,
-    pomodoro_work_duration: 25,
-    pomodoro_break_duration: 5,
-    pomodoro_long_break_duration: 15,
-    pomodoro_sessions_until_long_break: 4,
-    pomodoro_daily_goal_enabled: false,
-    pomodoro_daily_goal: 4,  // 4 hours default
+    // Focus settings
+    focus_sound: 'alarm.mp3',
+    focus_volume: 100,
+    focus_subtle_mode: false,
+    focus_prevent_sleep: false,
+    focus_work_duration: 25,
+    focus_break_duration: 5,
+    focus_long_break_duration: 15,
+    focus_sessions_until_long_break: 4,
+    focus_daily_goal_enabled: false,
+    focus_daily_goal: 4,  // 4 hours default
     // Missed Alerts settings
     missed_alerts_enabled: true,
     missed_alerts_window: 24,
-    // Pixel shift for OLED burn-in prevention
-    pixel_shift_enabled: true,
-    pixel_shift_range: 3,
-    pixel_shift_interval_seconds: 60,
     // Suspend Behavior
-    pomodoro_suspend_behavior: 'continue', // 'continue' = missed session, 'pause' = shift session
+    focus_suspend_behavior: 'continue', // 'continue' = missed session, 'pause' = shift session
     // Display settings
     snooze_activation_delay: 2.0,
     // Overlay settings
@@ -51,39 +36,23 @@ const DEFAULT_SETTINGS: UserSettings = {
     overlay_opacity: 0.4,
     overlay_max_alerts: 2,
     overlay_time_window: 1,
-    overlay_show_timers: true,
-    overlay_show_alarms: true,
-    overlay_show_pomodoros: true,
+    overlay_show_focus: true,
     overlay_compact_mode: false,
     overlay_show_prevent_sleep_badge: true,
     overlay_show_missed_badge: true,
-    // Timer presets settings
-    presets_enabled: true,
-    presets_max_visible: 5,
     // Tab Order
-    tab_order: ["timers", "alarms", "pomodoro"],
-    // Prevent Sleep settings
-    prevent_sleep_enabled: false,
-    prevent_sleep_timers: true,
-    prevent_sleep_pomodoro: true,
-    prevent_sleep_alarms: false,
-    prevent_sleep_alarms_window: 60,  // default 1 hour
+    tab_order: ["focus"],
 };
 
 export function useSettings() {
     const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
-    const [presets, setPresets] = useState<Preset[]>([]);
     const [loading, setLoading] = useState(true);
 
-    // Load initial settings and presets
+    // Load initial settings
     const loadData = useCallback(async () => {
         try {
-            const [userSettings, userPresets] = await Promise.all([
-                getSettingsCall(),
-                getPresetsCall()
-            ]);
+            const userSettings = await getSettingsCall();
             setSettings(userSettings);
-            setPresets(userPresets);
         } catch (e) {
             console.error('Failed to load settings:', e);
         } finally {
@@ -114,69 +83,27 @@ export function useSettings() {
         }
     }, []);
 
-    // Save a new preset
-    const savePreset = useCallback(async (
-        seconds: number, 
-        label: string, 
-        subtleMode?: boolean, 
-        autoSuspend?: boolean
-    ) => {
-        try {
-            await savePresetCall(seconds, label, subtleMode, autoSuspend);
-        } catch (e) {
-            console.error('Failed to save preset:', e);
-        }
-    }, []);
-
-    // Save preset from an active timer
-    const savePresetFromTimer = useCallback(async (timerId: string) => {
-        try {
-            await savePresetFromTimerCall(timerId);
-        } catch (e) {
-            console.error('Failed to save preset from timer:', e);
-        }
-    }, []);
-
-    // Remove a preset
-    const removePreset = useCallback(async (presetId: string) => {
-        try {
-            await removePresetCall(presetId);
-        } catch (e) {
-            console.error('Failed to remove preset:', e);
-        }
-    }, []);
-
     // Event handlers
     useEffect(() => {
         const handleSettingsUpdated = (updatedSettings: UserSettings) => {
             setSettings(updatedSettings);
         };
 
-        const handlePresetsUpdated = (updatedPresets: Preset[]) => {
-            setPresets(updatedPresets);
-        };
-
         addEventListener('timeout_settings_updated', handleSettingsUpdated);
-        addEventListener('timeout_presets_updated', handlePresetsUpdated);
 
         // Load initial data
         loadData();
 
         return () => {
             removeEventListener('timeout_settings_updated', handleSettingsUpdated);
-            removeEventListener('timeout_presets_updated', handlePresetsUpdated);
         };
     }, [loadData]);
 
     return {
         settings,
-        presets,
         loading,
         updateSetting,
         updateSettings,
-        savePreset,
-        savePresetFromTimer,
-        removePreset,
         refresh: loadData
     };
 }
