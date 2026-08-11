@@ -7,15 +7,12 @@
     "api_version": 1,
     "publish": {
         "tags": [
-            "alarm",
-            "timer",
             "productivity",
-            "pomodoro",
             "clock",
             "limits",
             "focus",
             "parental"
         ],
-        "description": "Play-time budgets, focus with teeth, and optional parental lockout for Steam Deck."
+        "description": "Play-time limits, focus modes, and parental controls for Steam Deck."
     }
 }
