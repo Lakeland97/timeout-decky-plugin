@@ -1,6 +1,6 @@
 # Timeout - Decky Loader Plugin
 
-Play-time discipline, focus with teeth, and optional parental lockout for Steam Deck.
+Play-time limits, focus modes, and parental controls for Steam Deck.
 
 ![Timeout](https://img.shields.io/badge/Decky-Plugin-blue)
 ![Version](https://img.shields.io/badge/release-v0.1.0-green)

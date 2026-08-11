@@ -1,7 +1,7 @@
 {
     "name": "timeout-decky-plugin",
     "version": "0.1.0",
-    "description": "Play-time discipline, focus enforcement, and parental controls for Decky Loader.",
+    "description": "Play-time limits, focus modes, and parental controls for Steam Deck.",
     "type": "module",
     "scripts": {
         "build": "rollup -c && node scripts/copy-assets.js",
