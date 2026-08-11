@@ -80,24 +80,11 @@ export interface UserSettings {
     overlay_compact_mode: boolean;
     overlay_show_prevent_sleep_badge: boolean;
     overlay_show_missed_badge: boolean;
-    // Legacy Prevent Sleep settings (deprecated - now per-item)
-    prevent_sleep_enabled?: boolean;
-    prevent_sleep_timers?: boolean;
     // Tab Order
     tab_order?: string[];
-    // Pixel shift
-    pixel_shift_enabled?: boolean;
-    pixel_shift_range?: number;
-    pixel_shift_interval_seconds?: number;
     // Legacy/deprecated (kept for migration)
     overlay_position_steamui?: OverlayPosition;
-    overlay_pixel_shift?: boolean;
-    overlay_pixel_shift_interval?: number;
-    overlay_pixel_shift_range?: number;
     subtle_mode?: boolean;
-    auto_suspend?: boolean;
-    alarm_volume?: number;
-    alarm_sound?: string;
 }
 
     // Sleep inhibitor status

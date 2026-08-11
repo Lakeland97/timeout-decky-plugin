@@ -46,7 +46,7 @@ export function useFocus() {
     const stopFocus = useCallback(async () => {
         try {
             await stopFocusCall();
-            // Only reset timer-related fields, preserve stats
+            // Only reset countdown fields, preserve stats
             setState(prev => ({
                 ...prev,
                 active: false,

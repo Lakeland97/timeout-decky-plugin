@@ -1394,13 +1394,16 @@ class Plugin:
                     changed = True
             decky.logger.info("Timeout: Renamed pomodoro_* settings keys → focus_*")
 
-        # Drop legacy timer_/alarm_/preset_ keys + stale overlay toggles removed in v2
+        # Drop legacy timer_/alarm_/preset_ keys + stale overlay/prevent-sleep/pixel-shift keys removed in v2
         for _stale in list(updated.keys()):
             if (_stale.startswith("timer_") or _stale.startswith("alarm_")
                     or _stale.startswith("preset_") or _stale in (
                         "overlay_show_timers", "overlay_show_alarms", "snooze_duration",
-                        "prevent_sleep_focus", "prevent_sleep_alarms",
-                        "prevent_sleep_alarms_window")):
+                        "prevent_sleep_pomodoro", "prevent_sleep_alarms",
+                        "prevent_sleep_alarms_window", "prevent_sleep_enabled",
+                        "prevent_sleep_timers",
+                        "pixel_shift_enabled", "pixel_shift_range",
+                        "pixel_shift_interval_seconds")):
                 del updated[_stale]
                 changed = True
 

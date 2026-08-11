@@ -22,10 +22,6 @@ const DEFAULT_SETTINGS: UserSettings = {
     // Missed Alerts settings
     missed_alerts_enabled: true,
     missed_alerts_window: 24,
-    // Pixel shift for OLED burn-in prevention
-    pixel_shift_enabled: true,
-    pixel_shift_range: 3,
-    pixel_shift_interval_seconds: 60,
     // Suspend Behavior
     focus_suspend_behavior: 'continue', // 'continue' = missed session, 'pause' = shift session
     // Display settings
@@ -46,9 +42,6 @@ const DEFAULT_SETTINGS: UserSettings = {
     overlay_show_missed_badge: true,
     // Tab Order
     tab_order: ["focus"],
-    // Prevent Sleep settings
-    prevent_sleep_enabled: false,
-    prevent_sleep_timers: true,
 };
 
 export function useSettings() {
