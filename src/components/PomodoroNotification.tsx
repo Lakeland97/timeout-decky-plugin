@@ -12,7 +12,7 @@ import { useUIComposition, UIComposition } from "../utils/uiComposition";
 // Backend callable for base64 sound data
 const getSoundDataCall = callable<[filename: string], { success: boolean; data: string | null; mime_type: string | null; error?: string }>('get_sound_data');
 
-// Focusable button with highlight (Consistent with SnoozeModal)
+// Focusable button with highlight
 interface PomodoroButtonProps {
     label: string | React.ReactNode;
     onClick: () => void;

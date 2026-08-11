@@ -16,7 +16,7 @@ import { FaVolumeUp, FaBell, FaClock, FaBrain, FaCoffee, FaPlay, FaPause, FaHour
 import { useEffect, useState, useRef } from "react";
 import { useSettings } from "../hooks/useSettings";
 import { useUIComposition, UIComposition } from "../utils/uiComposition";
-import { useAlarms } from "../hooks/useAlarms";
+import { useSounds } from "../hooks/useSounds";
 import { playAlarmSound } from "../utils/sounds";
 import { showExportModal, showImportModal } from "./BackupModals";
 import { BinarySelector } from "./BinarySelector";
@@ -120,39 +120,10 @@ const SoundPreviewButton = ({
 // Binary selector for suspend behavior options
 // ==================== BinarySelector is now in ./BinarySelector.tsx ====================
 
-// Alarm Settings Page
-const AlarmSettingsPage = () => {
-    const { settings, updateSetting } = useSettings();
-
-    return (
-        <ScrollableContent>
-            <PanelSection>
-                <PanelSectionRow>
-                    <SliderField
-                        label="Default Snooze Duration"
-                        description={`${settings.snooze_duration} minutes`}
-                        value={settings.snooze_duration}
-                        min={1}
-                        max={30}
-                        step={1}
-                        onChange={(value) => updateSetting('snooze_duration', value)}
-                        icon={<FaBell size={16} />}
-                    />
-                </PanelSectionRow>
-                <PanelSectionRow>
-                    <div style={{ fontSize: 12, color: '#888888', padding: '4px 0' }}>
-                        💡 Volume, sound, and other settings are configured per-alarm in the alarm editor.
-                    </div>
-                </PanelSectionRow>
-            </PanelSection>
-        </ScrollableContent>
-    );
-};
-
 // Pomodoro Settings Page
 const PomodoroSettingsPage = () => {
     const { settings, updateSetting } = useSettings();
-    const { getSounds, playCustomSound } = useAlarms();
+    const { getSounds, playCustomSound } = useSounds();
     const [sounds, setSounds] = useState<SoundFile[]>([{ filename: 'alarm.mp3', name: 'Alarm' }]);
 
     useEffect(() => {
@@ -298,7 +269,7 @@ const DEFAULT_TAB_ORDER = ["timers", "alarms", "pomodoro"];
 // General Settings Page
 const GeneralSettingsPage = () => {
     const { settings, updateSetting } = useSettings();
-    const { importCustomSounds } = useAlarms();
+    const { importCustomSounds } = useSounds();
     const [importStatus, setImportStatus] = useState<{ message: string; success: boolean } | null>(null);
 
     const tabOrder = settings.tab_order && settings.tab_order.length === DEFAULT_TAB_ORDER.length 
@@ -456,7 +427,7 @@ const GeneralSettingsPage = () => {
                     <ToggleField
                         icon={<FaBellSlash size={16} />}
                         label="Missed Alert Detection"
-                        description="Notify about alarms and timers missed while suspended"
+                        description="Notify about focus sessions missed while suspended"
                         checked={settings.missed_alerts_enabled ?? true}
                         onChange={(value) => updateSetting('missed_alerts_enabled', value)}
                     />
@@ -839,7 +810,7 @@ const showFactoryResetConfirm = (onConfirm: () => void) => {
     showModal(
         <ConfirmModal
             strTitle="Factory Reset"
-            strDescription="This will permanently delete all alarms, timers, Pomodoro data, and reset all settings to defaults. Custom sounds in ~/Music/Timeout_Sounds will NOT be deleted. This action cannot be undone."
+            strDescription="This will permanently delete all Focus data and reset all settings to defaults. Custom sounds in ~/Music/Timeout_Sounds will NOT be deleted. This action cannot be undone."
             strOKButtonText="Reset Everything"
             strCancelButtonText="Cancel"
             onOK={onConfirm}
@@ -880,7 +851,7 @@ const FactoryResetPage = () => {
             <PanelSection>
                 <PanelSectionRow>
                     <div style={{ fontSize: 13, color: '#cccccc', padding: '8px 0' }}>
-                        Reset all settings to defaults and delete all data including alarms, timers, and Pomodoro sessions.
+                        Reset all settings to defaults and delete all data including Focus sessions.
                     </div>
                 </PanelSectionRow>
                 <PanelSectionRow>
@@ -941,11 +912,6 @@ export const SettingsPage = () => {
             title: "General",
             icon: <FaCog size={16} />,
             content: <GeneralSettingsPage />
-        },
-        {
-            title: "Alarms",
-            icon: <FaBell size={16} />,
-            content: <AlarmSettingsPage />
         },
         {
             title: "Pomodoro",

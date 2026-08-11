@@ -1,26 +1,5 @@
 // TypeScript type definitions for Timeout plugin
 
-// Alarm types
-export type RecurringType = 'once' | 'daily' | 'weekdays' | 'weekends' | string;
-
-export interface Alarm {
-    id: string;
-    hour: number;
-    minute: number;
-    label: string;
-    recurring: RecurringType;
-    enabled: boolean;
-    created_at: number;
-    snoozed_until: number | null;
-    next_trigger?: number | null;
-    sound?: string;           // filename of the sound to play
-    volume?: number;          // 0-100, per-alarm volume override
-    subtle_mode?: boolean;    // per-alarm subtle mode override
-    auto_suspend?: boolean;   // per-alarm auto suspend override
-    prevent_sleep?: boolean;  // per-alarm prevent sleep override
-    prevent_sleep_window?: number; // minutes before alarm to start preventing sleep
-}
-
 // Sound file types
 export interface SoundFile {
     filename: string;
@@ -68,7 +47,6 @@ export interface DailyHistoryEntry {
 
 // Settings types
 export interface UserSettings {
-    snooze_duration: number;      // default snooze for alarms
     time_format_24h: boolean;
     // Pomodoro settings
     pomodoro_sound: string;
@@ -150,29 +128,11 @@ export interface MissedItem {
 }
 
 // Event payload types
-export interface AlarmTriggeredEvent {
-    id: string;
-    label: string;
-    subtle: boolean;
-    sound?: string;
-    volume?: number;
-    snooze_duration?: number;
-    auto_suspend?: boolean;
-    time_format_24h?: boolean;
-    snooze_activation_delay?: number;
-}
-
 export interface PomodoroTickEvent {
     remaining: number;
     is_break: boolean;
     session: number;
     cycle?: number;
-}
-
-export interface SnoozeEvent {
-    id: string;
-    snoozed_until: number;
-    minutes: number;
 }
 
 // Overlay types

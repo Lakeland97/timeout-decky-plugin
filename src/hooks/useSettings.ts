@@ -7,7 +7,6 @@ const getSettingsCall = callable<[], UserSettings>('get_settings');
 const updateSettingsCall = callable<[settings: Partial<UserSettings>], UserSettings>('update_settings');
 
 const DEFAULT_SETTINGS: UserSettings = {
-    snooze_duration: 5,
     time_format_24h: true,
     // Pomodoro settings
     pomodoro_sound: 'alarm.mp3',

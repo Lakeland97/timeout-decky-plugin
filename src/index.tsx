@@ -17,18 +17,14 @@ import { FaBell, FaCog, FaBrain, FaHourglassHalf, FaShieldAlt } from "react-icon
 import { useState, useEffect, useRef, useMemo } from "react";
 
 // Components
-import { AlarmPanel } from "./components/AlarmPanel";
 import { PomodoroPanel } from "./components/PomodoroPanel";
 import { SettingsPage, SETTINGS_ROUTE, navigateToSettings } from "./components/SettingsModal";
-import { showSnoozeModal } from "./components/SnoozeModal";
 import { PomodoroNotification } from "./components/PomodoroNotification";
 import { GameOverlay } from "./components/GameOverlay";
 import showMissedReportModal from "./components/MissedReportModal";
 import { showSleepInhibitorModal } from "./components/SleepInhibitorModal";
 import { TimeoutUIComposition } from "./components/TimeoutUIComposition";
 import { playAlarmSound } from "./utils/sounds";
-import { SteamUtils } from "./utils/steam";
-import { formatTime } from "./utils/time";
 import { useSettings } from "./hooks/useSettings";
 import { useSleepInhibitor } from "./hooks/useSleepInhibitor";
 import { usePomodoro } from "./hooks/usePomodoro";
@@ -36,17 +32,13 @@ import { useMissedAlerts } from "./hooks/useMissedAlerts";
 import { MODAL_ZINDEX_CSS } from "./utils/zIndex";
 
 // Types
-import type {
-    AlarmTriggeredEvent,
-    PomodoroState,
-} from "./types";
+import type { PomodoroState } from "./types";
 
 // Backend callables
-const snoozeAlarm = callable<[alarm_id: string, minutes: number], boolean>('snooze_alarm');
 const setGameRunning = callable<[is_running: boolean], void>('set_game_running');
 
 // Tab configuration
-type TabId = 'alarms' | 'pomodoro';
+type TabId = 'pomodoro';
 
 interface Tab {
     id: TabId;
@@ -55,7 +47,6 @@ interface Tab {
 }
 
 const TABS: Tab[] = [
-    { id: 'alarms', label: 'Alarms', icon: <FaBell size={16} /> },
     { id: 'pomodoro', label: 'Focus', icon: <FaBrain size={16} /> },
 ];
 
@@ -370,7 +361,6 @@ function Content() {
             </PanelSection>
 
             {/* Tab Content */}
-            {activeTab === 'alarms' && <AlarmPanel />}
             {activeTab === 'pomodoro' && <PomodoroPanel />}
         </div>
     );
@@ -379,45 +369,6 @@ function Content() {
 // Plugin Definition
 export default definePlugin(() => {
     // Event handlers
-    const getTimeStr = (use24h: boolean = true) => {
-        const now = new Date();
-        return formatTime(now.getHours(), now.getMinutes(), use24h);
-    };
-
-    const handleAlarmTriggered = (event: AlarmTriggeredEvent) => {
-        // Auto-suspend forces subtle mode (modal before suspend makes no sense)
-        const useSubtle = event.subtle || event.auto_suspend;
-        const use24h = event.time_format_24h ?? true;
-
-        if (useSubtle) {
-            toaster.toast({
-                title: "🔔 Alarm!",
-                body: `${event.label} • ${getTimeStr(use24h)}`
-            });
-            // Play sound briefly for non-subtle with auto-suspend
-            if (!event.subtle && event.auto_suspend) {
-                playAlarmSound(event.sound || 'alarm.mp3', event.volume);
-            }
-            // Suspend after toast is visible
-            if (event.auto_suspend) {
-                setTimeout(() => SteamUtils.suspend(), 3000);
-            }
-        } else {
-            showSnoozeModal({
-                id: event.id,
-                label: event.label,
-                type: 'alarm',
-                sound: event.sound,
-                volume: event.volume,
-                defaultSnoozeDuration: event.snooze_duration,
-                use24h,
-                snoozeActivationDelay: event.snooze_activation_delay,
-                onSnooze: (minutes) => snoozeAlarm(event.id, minutes),
-                onDismiss: () => { }
-            });
-        }
-    };
-
     const handlePomodoroWorkEnded = (state: PomodoroState) => {
         if (state.subtle_mode) {
             // Play sound briefly for subtle mode
@@ -445,7 +396,6 @@ export default definePlugin(() => {
     };
 
     // Register event listeners
-    addEventListener('timeout_alarm_triggered', handleAlarmTriggered);
     addEventListener('timeout_pomodoro_work_ended', handlePomodoroWorkEnded);
     addEventListener('timeout_pomodoro_break_ended', handlePomodoroBreakEnded);
 
@@ -521,7 +471,6 @@ export default definePlugin(() => {
         alwaysRender: true, // Keep plugin state active for overlay visibility
 
         onDismount: () => {
-            removeEventListener('timeout_alarm_triggered', handleAlarmTriggered);
             removeEventListener('timeout_pomodoro_work_ended', handlePomodoroWorkEnded);
             removeEventListener('timeout_pomodoro_break_ended', handlePomodoroBreakEnded);
             // Unregister settings route and overlay
