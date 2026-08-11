@@ -23,6 +23,7 @@ settings.read()
 # Settings keys
 SETTINGS_KEY_SETTINGS = "user_settings"
 SETTINGS_KEY_FOCUS = "focus_state"
+SETTINGS_KEY_GAME_LIMITS = "game_limits_state"
 
 # Limits to prevent excessive data
 
@@ -59,11 +60,44 @@ DEFAULT_SETTINGS = {
     "overlay_show_prevent_sleep_badge": True,
     "overlay_show_missed_badge": True,
     # Tab Order
-    "tab_order": ["focus"]
+    "tab_order": ["focus"],
+    # Game Limits (sub-project B) — disabled by default
+    "game_limits_config": {
+        "enabled": False,
+        "mode": "blacklist",  # "whitelist" | "blacklist"
+        "global": {
+            "opens_enabled": False,
+            "opens_per_day": 3,
+            "opens_bypass_curfew": False,
+            "time_enabled": False,
+            "time_cap_minutes": 20,
+            "half_open_cap_minutes": 10,
+            "curfew_enabled": False,
+            "curfew_start": "00:00",
+            "curfew_end": "05:00",
+            "curfew_days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+            "cooldown_enabled": False,
+            "cooldown_minutes": 0,
+            "grace_seconds": 60,
+            "five_min_finish_minutes": 5,
+            "warn_thresholds_minutes": [5, 1]
+        },
+        "per_game": {}
+    },
+    # Focus enforcement tiers (sub-project C)
+    "focus_default_tier": "soft",  # "soft" | "medium" | "hard"
+    "focus_take_a_break_max_per_session": 1,
+    # Parental controls (sub-project D) — stub, NOT real auth
+    "parental_controls": {
+        "enabled": False,
+        "passcode": "",  # plaintext stub — revisit before any real release
+        "mode": "self"   # "self" | "admin"
+    }
 }
 
 class Plugin:
     focus_task = None
+    game_limits_task = None
     suspend_monitor_task = None
     _game_running: bool = False  # Track game state from frontend
     loop = None
@@ -1435,6 +1469,14 @@ class Plugin:
                 await self.settings_setSetting("pomodoro_state", None)
                 changed = True
                 decky.logger.info("Timeout: Renamed pomodoro_state blob → focus_state")
+
+
+        # --- skeleton: seed new feature keys idempotently (B/C/D) ---
+        for _new_key in ("game_limits_config", "focus_default_tier",
+                          "focus_take_a_break_max_per_session", "parental_controls"):
+            if _new_key not in updated:
+                updated[_new_key] = DEFAULT_SETTINGS[_new_key]
+                changed = True
 
         if changed:
             await self.settings_setSetting(SETTINGS_KEY_SETTINGS, updated)
