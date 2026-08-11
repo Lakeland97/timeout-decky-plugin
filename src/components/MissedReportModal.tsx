@@ -1,6 +1,6 @@
 import { ConfirmModal, showModal, Focusable } from "@decky/ui";
 import { callable } from "@decky/api";
-import { FaBell, FaHourglassHalf, FaBrain } from "react-icons/fa";
+import { FaBrain } from "react-icons/fa";
 import { MissedItem } from "../types";
 import { formatTime } from "../utils/time";
 import { useUIComposition, UIComposition } from "../utils/uiComposition";
@@ -71,9 +71,7 @@ function MissedReportModalContent({ items, use24h, closeModal }: MissedReportMod
                             }}
                         >
                             <div style={{ fontSize: 18, color: '#aaeeff', display: 'flex', alignItems: 'center' }}>
-                                {item.type === 'alarm' && <FaBell />}
-                                {item.type === 'timer' && <FaHourglassHalf />}
-                                {item.type === 'pomodoro' && <FaBrain />}
+                                {item.type === 'focus' && <FaBrain />}
                             </div>
                             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
                                 <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{item.label}</div>

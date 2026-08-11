@@ -120,8 +120,8 @@ const SoundPreviewButton = ({
 // Binary selector for suspend behavior options
 // ==================== BinarySelector is now in ./BinarySelector.tsx ====================
 
-// Pomodoro Settings Page
-const PomodoroSettingsPage = () => {
+// Focus Settings Page
+const FocusSettingsPage = () => {
     const { settings, updateSetting } = useSettings();
     const { getSounds, playCustomSound } = useSounds();
     const [sounds, setSounds] = useState<SoundFile[]>([{ filename: 'alarm.mp3', name: 'Alarm' }]);
@@ -140,27 +140,27 @@ const PomodoroSettingsPage = () => {
                         <div style={{ flex: 1, minWidth: 0 }}>
                             <Dropdown
                                 rgOptions={sounds.map(s => ({ data: s.filename, label: s.name }))}
-                                selectedOption={settings.pomodoro_sound || 'alarm.mp3'}
-                                onChange={(option) => updateSetting('pomodoro_sound', option.data as string)}
+                                selectedOption={settings.focus_sound || 'alarm.mp3'}
+                                onChange={(option) => updateSetting('focus_sound', option.data as string)}
                                 strDefaultLabel="Select Sound"
                             />
                         </div>
-                        {settings.pomodoro_sound !== 'soundless' && (
-                            <SoundPreviewButton soundFile={settings.pomodoro_sound || 'alarm.mp3'} onPlayCustom={playCustomSound} />
+                        {settings.focus_sound !== 'soundless' && (
+                            <SoundPreviewButton soundFile={settings.focus_sound || 'alarm.mp3'} onPlayCustom={playCustomSound} />
                         )}
                     </Focusable>
                 </PanelSectionRow>
 
-                {settings.pomodoro_sound !== 'soundless' && (
+                {settings.focus_sound !== 'soundless' && (
                     <PanelSectionRow>
                         <SliderField
                             label="Volume"
-                            description={`${settings.pomodoro_volume ?? 100}%`}
-                            value={settings.pomodoro_volume ?? 100}
+                            description={`${settings.focus_volume ?? 100}%`}
+                            value={settings.focus_volume ?? 100}
                             min={0}
                             max={100}
                             step={5}
-                            onChange={(value) => updateSetting('pomodoro_volume', value)}
+                            onChange={(value) => updateSetting('focus_volume', value)}
                             icon={<FaVolumeUp size={16} />}
                         />
                     </PanelSectionRow>
@@ -169,12 +169,12 @@ const PomodoroSettingsPage = () => {
                 <PanelSectionRow>
                     <SliderField
                         label="Work Duration"
-                        description={`${settings.pomodoro_work_duration} minutes`}
-                        value={settings.pomodoro_work_duration}
+                        description={`${settings.focus_work_duration} minutes`}
+                        value={settings.focus_work_duration}
                         min={15}
                         max={60}
                         step={5}
-                        onChange={(value) => updateSetting('pomodoro_work_duration', value)}
+                        onChange={(value) => updateSetting('focus_work_duration', value)}
                         icon={<FaBrain size={16} />}
                     />
                 </PanelSectionRow>
@@ -182,12 +182,12 @@ const PomodoroSettingsPage = () => {
                 <PanelSectionRow>
                     <SliderField
                         label="Short Break"
-                        description={`${settings.pomodoro_break_duration} minutes`}
-                        value={settings.pomodoro_break_duration}
+                        description={`${settings.focus_break_duration} minutes`}
+                        value={settings.focus_break_duration}
                         min={3}
                         max={15}
                         step={1}
-                        onChange={(value) => updateSetting('pomodoro_break_duration', value)}
+                        onChange={(value) => updateSetting('focus_break_duration', value)}
                         icon={<FaCoffee size={16} />}
                     />
                 </PanelSectionRow>
@@ -195,12 +195,12 @@ const PomodoroSettingsPage = () => {
                 <PanelSectionRow>
                     <SliderField
                         label="Long Break"
-                        description={`${settings.pomodoro_long_break_duration} minutes`}
-                        value={settings.pomodoro_long_break_duration}
+                        description={`${settings.focus_long_break_duration} minutes`}
+                        value={settings.focus_long_break_duration}
                         min={10}
                         max={45}
                         step={5}
-                        onChange={(value) => updateSetting('pomodoro_long_break_duration', value)}
+                        onChange={(value) => updateSetting('focus_long_break_duration', value)}
                         icon={<FaCoffee size={16} />}
                     />
                 </PanelSectionRow>
@@ -208,12 +208,12 @@ const PomodoroSettingsPage = () => {
                 <PanelSectionRow>
                     <SliderField
                         label="Sessions Until Long Break"
-                        description={`${settings.pomodoro_sessions_until_long_break} sessions`}
-                        value={settings.pomodoro_sessions_until_long_break}
+                        description={`${settings.focus_sessions_until_long_break} sessions`}
+                        value={settings.focus_sessions_until_long_break}
                         min={2}
                         max={8}
                         step={1}
-                        onChange={(value) => updateSetting('pomodoro_sessions_until_long_break', value)}
+                        onChange={(value) => updateSetting('focus_sessions_until_long_break', value)}
                         icon={<FaClock size={16} />}
                     />
                 </PanelSectionRow>
@@ -223,21 +223,21 @@ const PomodoroSettingsPage = () => {
                         icon={<FaBullseye size={16} />}
                         label="Daily Goal"
                         description="Track progress toward a daily focus time goal"
-                        checked={settings.pomodoro_daily_goal_enabled ?? false}
-                        onChange={(value) => updateSetting('pomodoro_daily_goal_enabled', value)}
+                        checked={settings.focus_daily_goal_enabled ?? false}
+                        onChange={(value) => updateSetting('focus_daily_goal_enabled', value)}
                     />
                 </PanelSectionRow>
 
-                {settings.pomodoro_daily_goal_enabled && (
+                {settings.focus_daily_goal_enabled && (
                     <PanelSectionRow>
                         <SliderField
                             label="Daily Goal Hours"
-                            description={`${settings.pomodoro_daily_goal ?? 4} hours`}
-                            value={settings.pomodoro_daily_goal ?? 4}
+                            description={`${settings.focus_daily_goal ?? 4} hours`}
+                            value={settings.focus_daily_goal ?? 4}
                             min={1}
                             max={8}
                             step={1}
-                            onChange={(value) => updateSetting('pomodoro_daily_goal', value)}
+                            onChange={(value) => updateSetting('focus_daily_goal', value)}
                             icon={<FaClock size={16} />}
                         />
                     </PanelSectionRow>
@@ -248,8 +248,8 @@ const PomodoroSettingsPage = () => {
                     description="What happens when device is sleeping"
                     leftOption={{ value: 'pause', label: 'Shift (Pause)' }}
                     rightOption={{ value: 'continue', label: 'Miss (Continue)' }}
-                    value={settings.pomodoro_suspend_behavior || 'continue'}
-                    onChange={(val) => updateSetting('pomodoro_suspend_behavior', val as 'continue' | 'pause')}
+                    value={settings.focus_suspend_behavior || 'continue'}
+                    onChange={(val) => updateSetting('focus_suspend_behavior', val as 'continue' | 'pause')}
                     icon={<FaBrain size={16} />}
                 />
             </PanelSection>
@@ -259,12 +259,10 @@ const PomodoroSettingsPage = () => {
 
 // Tab labels for display
 const TAB_LABELS: Record<string, string> = {
-    "timers": "Timers",
-    "alarms": "Alarms",
-    "pomodoro": "Focus",
+    "focus": "Focus",
 };
 
-const DEFAULT_TAB_ORDER = ["timers", "alarms", "pomodoro"];
+const DEFAULT_TAB_ORDER = ["focus"];
 
 // General Settings Page
 const GeneralSettingsPage = () => {
@@ -766,10 +764,10 @@ const OverlaySettingsPage = () => {
                         <PanelSectionRow>
                             <ToggleField
                                 icon={<FaBrain />}
-                                label="Pomodoro"
+                                label="Focus"
                                 description="Show active focus/break countdown"
-                                checked={settings.overlay_show_pomodoros ?? true}
-                                onChange={(value) => updateSetting('overlay_show_pomodoros', value)}
+                                checked={settings.overlay_show_focus ?? true}
+                                onChange={(value) => updateSetting('overlay_show_focus', value)}
                             />
                         </PanelSectionRow>
 
@@ -914,9 +912,9 @@ export const SettingsPage = () => {
             content: <GeneralSettingsPage />
         },
         {
-            title: "Pomodoro",
+            title: "Focus",
             icon: <FaBrain size={16} />,
-            content: <PomodoroSettingsPage />
+            content: <FocusSettingsPage />
         },
         {
             title: "Overlay",

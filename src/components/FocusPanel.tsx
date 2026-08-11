@@ -7,13 +7,13 @@ import {
     ToggleField
 } from "@decky/ui";
 import { FaPlay, FaStop, FaForward, FaCoffee, FaBrain } from "react-icons/fa";
-import { usePomodoro } from "../hooks/usePomodoro";
+import { useFocus } from "../hooks/useFocus";
 import { useSettings } from "../hooks/useSettings";
 import { formatDuration } from "../utils/time";
-import { PomodoroStatsPanel } from "./PomodoroStatsPanel";
+import { FocusStatsPanel } from "./FocusStatsPanel";
 
 
-export function PomodoroPanel() {
+export function FocusPanel() {
     const {
         isActive,
         isBreak,
@@ -21,18 +21,18 @@ export function PomodoroPanel() {
         currentCycle,
         remaining,
         elapsedThisPhase,
-        startPomodoro,
-        stopPomodoro,
+        startFocus,
+        stopFocus,
         skipPhase,
         resetStats,
         stats
-    } = usePomodoro();
+    } = useFocus();
     const { settings, updateSetting } = useSettings();
 
-    const workDuration = settings.pomodoro_work_duration * 60;
-    const breakDuration = settings.pomodoro_break_duration * 60;
-    const longBreakDuration = settings.pomodoro_long_break_duration * 60;
-    const sessionsUntilLong = settings.pomodoro_sessions_until_long_break;
+    const workDuration = settings.focus_work_duration * 60;
+    const breakDuration = settings.focus_break_duration * 60;
+    const longBreakDuration = settings.focus_long_break_duration * 60;
+    const sessionsUntilLong = settings.focus_sessions_until_long_break;
 
     const getCurrentPhaseDuration = () => {
         if (!isActive) return workDuration;
@@ -58,7 +58,7 @@ export function PomodoroPanel() {
 
     return (
         <div>
-            <PanelSection title="Pomodoro Timer">
+            <PanelSection title="Focus Timer">
                 {/* Status Display */}
                 <PanelSectionRow>
                     <div style={{
@@ -126,7 +126,7 @@ export function PomodoroPanel() {
                     <PanelSectionRow>
                         <ButtonItem
                             layout="below"
-                            onClick={startPomodoro}
+                            onClick={startFocus}
                         >
                             <FaPlay size={12} style={{ marginRight: 8 }} />
                             Start Focus Session
@@ -146,7 +146,7 @@ export function PomodoroPanel() {
                         <PanelSectionRow>
                             <ButtonItem
                                 layout="below"
-                                onClick={stopPomodoro}
+                                onClick={stopFocus}
                             >
                                 <FaStop size={12} style={{ marginRight: 8 }} />
                                 Stop Session
@@ -160,8 +160,8 @@ export function PomodoroPanel() {
                         icon={<span style={{ fontSize: 14 }}>📵</span>}
                         label="Subtle Mode"
                         description="Show a small toast instead of fullscreen popup"
-                        checked={settings.pomodoro_subtle_mode ?? false}
-                        onChange={(value) => updateSetting('pomodoro_subtle_mode', value)}
+                        checked={settings.focus_subtle_mode ?? false}
+                        onChange={(value) => updateSetting('focus_subtle_mode', value)}
                     />
                 </PanelSectionRow>
 
@@ -170,26 +170,26 @@ export function PomodoroPanel() {
                         icon={<span style={{ fontSize: 14 }}>🛡️</span>}
                         label="Prevent Sleep"
                         description="Keep device awake during sessions. Use with caution - may drain battery."
-                        checked={settings.pomodoro_prevent_sleep ?? false}
-                        onChange={(value) => updateSetting('pomodoro_prevent_sleep', value)}
+                        checked={settings.focus_prevent_sleep ?? false}
+                        onChange={(value) => updateSetting('focus_prevent_sleep', value)}
                     />
                 </PanelSectionRow>
 
             </PanelSection>
 
-            {/* Pomodoro Info */}
+            {/* Focus Info */}
             <PanelSection title="How it works">
                 <PanelSectionRow>
                     <Focusable style={{ width: '100%' }}>
                         <div style={{ fontSize: 13, color: '#aaaaaa', lineHeight: 1.5, paddingRight: 16 }}>
                             <p style={{ marginBottom: 8 }}>
-                                <strong>1.</strong> Focus for {settings.pomodoro_work_duration} minutes
+                                <strong>1.</strong> Focus for {settings.focus_work_duration} minutes
                             </p>
                             <p style={{ marginBottom: 8 }}>
-                                <strong>2.</strong> Take a {settings.pomodoro_break_duration} minute break
+                                <strong>2.</strong> Take a {settings.focus_break_duration} minute break
                             </p>
                             <p style={{ marginBottom: 8 }}>
-                                <strong>3.</strong> After {sessionsUntilLong} sessions, enjoy a {settings.pomodoro_long_break_duration} minute break
+                                <strong>3.</strong> After {sessionsUntilLong} sessions, enjoy a {settings.focus_long_break_duration} minute break
                             </p>
                             <p style={{ color: '#888888', fontSize: 12 }}>
                                 Customize durations in Settings.
@@ -200,14 +200,14 @@ export function PomodoroPanel() {
             </PanelSection>
 
             {/* Stats Panel (New Unified Component) */}
-            <PomodoroStatsPanel
+            <FocusStatsPanel
                 stats={stats}
                 elapsedThisPhase={elapsedThisPhase}
                 isActive={isActive}
                 isBreak={isBreak}
                 onResetStats={resetStats}
-                dailyGoalEnabled={settings.pomodoro_daily_goal_enabled}
-                dailyGoalHours={settings.pomodoro_daily_goal}
+                dailyGoalEnabled={settings.focus_daily_goal_enabled}
+                dailyGoalHours={settings.focus_daily_goal}
             />
         </div>
     );

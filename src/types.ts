@@ -6,8 +6,8 @@ export interface SoundFile {
     name: string;
 }
 
-// Pomodoro types
-export interface PomodoroState {
+// Focus types
+export interface FocusState {
     active: boolean;
     is_break: boolean;
     current_session: number;
@@ -21,10 +21,10 @@ export interface PomodoroState {
     volume?: number;
     subtle_mode?: boolean;
     prevent_sleep?: boolean;
-    stats?: PomodoroStats;
+    stats?: FocusStats;
 }
 
-export interface PomodoroStats {
+export interface FocusStats {
     daily_focus_time: number;
     daily_break_time: number;
     daily_sessions: number;
@@ -48,22 +48,22 @@ export interface DailyHistoryEntry {
 // Settings types
 export interface UserSettings {
     time_format_24h: boolean;
-    // Pomodoro settings
-    pomodoro_sound: string;
-    pomodoro_volume: number;
-    pomodoro_subtle_mode: boolean;
-    pomodoro_prevent_sleep: boolean;
-    pomodoro_work_duration: number;
-    pomodoro_break_duration: number;
-    pomodoro_long_break_duration: number;
-    pomodoro_sessions_until_long_break: number;
-    pomodoro_daily_goal_enabled: boolean;
-    pomodoro_daily_goal: number;  // hours per day goal
+    // Focus settings
+    focus_sound: string;
+    focus_volume: number;
+    focus_subtle_mode: boolean;
+    focus_prevent_sleep: boolean;
+    focus_work_duration: number;
+    focus_break_duration: number;
+    focus_long_break_duration: number;
+    focus_sessions_until_long_break: number;
+    focus_daily_goal_enabled: boolean;
+    focus_daily_goal: number;  // hours per day goal
     // Missed Alerts Global Settings
     missed_alerts_enabled: boolean;
     missed_alerts_window: number; // hours to look back
     // Suspend Behavior
-    pomodoro_suspend_behavior?: 'continue' | 'pause';
+    focus_suspend_behavior?: 'continue' | 'pause';
     // Display settings
     snooze_activation_delay: number;
     // Overlay settings
@@ -78,14 +78,14 @@ export interface UserSettings {
     overlay_time_window: number;        // hours ahead to show
     overlay_show_timers: boolean;
     overlay_show_alarms: boolean;
-    overlay_show_pomodoros: boolean;
+    overlay_show_focus: boolean;
     overlay_compact_mode: boolean;
     overlay_show_prevent_sleep_badge: boolean;
     overlay_show_missed_badge: boolean;
     // Legacy Prevent Sleep settings (deprecated - now per-item)
     prevent_sleep_enabled?: boolean;
     prevent_sleep_timers?: boolean;
-    prevent_sleep_pomodoro?: boolean;
+    prevent_sleep_focus?: boolean;
     prevent_sleep_alarms?: boolean;
     prevent_sleep_alarms_window?: number;  // minutes before alarm to keep awake
     // Tab Order
@@ -120,7 +120,7 @@ export interface SleepInhibitorStatus {
 
 export interface MissedItem {
     id: string;
-    type: 'alarm' | 'timer' | 'pomodoro';
+    type: 'focus';
     label: string;
     due_time: number;
     missed_at: number;
@@ -128,7 +128,7 @@ export interface MissedItem {
 }
 
 // Event payload types
-export interface PomodoroTickEvent {
+export interface FocusTickEvent {
     remaining: number;
     is_break: boolean;
     session: number;
@@ -140,18 +140,18 @@ export type OverlayPosition = 'default' | 'custom';
 
 export type OverlayDisplayMode = 'both' | 'steam_only' | 'gaming_only' | 'always';
 
-export type OverlayCategory = 'timer' | 'alarm' | 'pomodoro';
+export type OverlayCategory = 'focus';
 
 export interface OverlayAlert {
     id: string;
     category: OverlayCategory;
     label: string;
     time: number;       // UNIX timestamp of trigger/end
-    remaining?: number; // seconds remaining (for timers/pomodoro)
+    remaining?: number; // seconds remaining (for timers/focus)
     subtle_mode?: boolean;
     auto_suspend?: boolean;
     prevent_sleep?: boolean;
 }
 
 // Tab types
-export type TabId = 'timers' | 'alarms' | 'pomodoro' | 'settings';
+export type TabId = 'focus' | 'settings';

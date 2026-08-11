@@ -8,17 +8,17 @@ const updateSettingsCall = callable<[settings: Partial<UserSettings>], UserSetti
 
 const DEFAULT_SETTINGS: UserSettings = {
     time_format_24h: true,
-    // Pomodoro settings
-    pomodoro_sound: 'alarm.mp3',
-    pomodoro_volume: 100,
-    pomodoro_subtle_mode: false,
-    pomodoro_prevent_sleep: false,
-    pomodoro_work_duration: 25,
-    pomodoro_break_duration: 5,
-    pomodoro_long_break_duration: 15,
-    pomodoro_sessions_until_long_break: 4,
-    pomodoro_daily_goal_enabled: false,
-    pomodoro_daily_goal: 4,  // 4 hours default
+    // Focus settings
+    focus_sound: 'alarm.mp3',
+    focus_volume: 100,
+    focus_subtle_mode: false,
+    focus_prevent_sleep: false,
+    focus_work_duration: 25,
+    focus_break_duration: 5,
+    focus_long_break_duration: 15,
+    focus_sessions_until_long_break: 4,
+    focus_daily_goal_enabled: false,
+    focus_daily_goal: 4,  // 4 hours default
     // Missed Alerts settings
     missed_alerts_enabled: true,
     missed_alerts_window: 24,
@@ -27,7 +27,7 @@ const DEFAULT_SETTINGS: UserSettings = {
     pixel_shift_range: 3,
     pixel_shift_interval_seconds: 60,
     // Suspend Behavior
-    pomodoro_suspend_behavior: 'continue', // 'continue' = missed session, 'pause' = shift session
+    focus_suspend_behavior: 'continue', // 'continue' = missed session, 'pause' = shift session
     // Display settings
     snooze_activation_delay: 2.0,
     // Overlay settings
@@ -42,16 +42,16 @@ const DEFAULT_SETTINGS: UserSettings = {
     overlay_time_window: 1,
     overlay_show_timers: true,
     overlay_show_alarms: true,
-    overlay_show_pomodoros: true,
+    overlay_show_focus: true,
     overlay_compact_mode: false,
     overlay_show_prevent_sleep_badge: true,
     overlay_show_missed_badge: true,
     // Tab Order
-    tab_order: ["timers", "alarms", "pomodoro"],
+    tab_order: ["focus"],
     // Prevent Sleep settings
     prevent_sleep_enabled: false,
     prevent_sleep_timers: true,
-    prevent_sleep_pomodoro: true,
+    prevent_sleep_focus: true,
     prevent_sleep_alarms: false,
     prevent_sleep_alarms_window: 60,  // default 1 hour
 };

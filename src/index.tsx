@@ -17,9 +17,9 @@ import { FaBell, FaCog, FaBrain, FaHourglassHalf, FaShieldAlt } from "react-icon
 import { useState, useEffect, useRef, useMemo } from "react";
 
 // Components
-import { PomodoroPanel } from "./components/PomodoroPanel";
+import { FocusPanel } from "./components/FocusPanel";
 import { SettingsPage, SETTINGS_ROUTE, navigateToSettings } from "./components/SettingsModal";
-import { PomodoroNotification } from "./components/PomodoroNotification";
+import { FocusNotification } from "./components/FocusNotification";
 import { GameOverlay } from "./components/GameOverlay";
 import showMissedReportModal from "./components/MissedReportModal";
 import { showSleepInhibitorModal } from "./components/SleepInhibitorModal";
@@ -27,18 +27,18 @@ import { TimeoutUIComposition } from "./components/TimeoutUIComposition";
 import { playAlarmSound } from "./utils/sounds";
 import { useSettings } from "./hooks/useSettings";
 import { useSleepInhibitor } from "./hooks/useSleepInhibitor";
-import { usePomodoro } from "./hooks/usePomodoro";
+import { useFocus } from "./hooks/useFocus";
 import { useMissedAlerts } from "./hooks/useMissedAlerts";
 import { MODAL_ZINDEX_CSS } from "./utils/zIndex";
 
 // Types
-import type { PomodoroState } from "./types";
+import type { FocusState } from "./types";
 
 // Backend callables
 const setGameRunning = callable<[is_running: boolean], void>('set_game_running');
 
 // Tab configuration
-type TabId = 'pomodoro';
+type TabId = 'focus';
 
 interface Tab {
     id: TabId;
@@ -47,7 +47,7 @@ interface Tab {
 }
 
 const TABS: Tab[] = [
-    { id: 'pomodoro', label: 'Focus', icon: <FaBrain size={16} /> },
+    { id: 'focus', label: 'Focus', icon: <FaBrain size={16} /> },
 ];
 
 // Tab Button Component
@@ -111,7 +111,7 @@ const TabButton = ({ tab, active, hasActiveItems, onClick }: TabButtonProps) => 
 
 // Main Content Component
 function Content() {
-    const [activeTab, setActiveTab] = useState<TabId>('pomodoro');
+    const [activeTab, setActiveTab] = useState<TabId>('focus');
     const { settings: userSettings } = useSettings();
     const { isActive: sleepInhibitorActive, items: sleepInhibitorItems } = useSleepInhibitor();
     const { missedItems, hasMissedAlerts, hasNewMissedAlerts, markAsSeen } = useMissedAlerts();
@@ -119,10 +119,10 @@ function Content() {
     const contentRef = useRef<HTMLDivElement>(null);
 
     // Track active items for tab indicators
-    const { state: pomodoroState } = usePomodoro();
+    const { state: focusState } = useFocus();
 
     // Calculate which tabs have active items
-    const hasActivePomodoro = pomodoroState.active;
+    const hasActiveFocus = focusState.active;
 
     // Sort tabs based on settings, or use default order
     const orderedTabs = useMemo(() => {
@@ -344,7 +344,7 @@ function Content() {
                     >
                         {orderedTabs.map(tab => {
                             let hasActiveItems = false;
-                            if (tab.id === 'pomodoro') hasActiveItems = hasActivePomodoro;
+                            if (tab.id === 'focus') hasActiveItems = hasActiveFocus;
                             
                             return (
                                 <TabButton
@@ -361,7 +361,7 @@ function Content() {
             </PanelSection>
 
             {/* Tab Content */}
-            {activeTab === 'pomodoro' && <PomodoroPanel />}
+            {activeTab === 'focus' && <FocusPanel />}
         </div>
     );
 }
@@ -369,7 +369,7 @@ function Content() {
 // Plugin Definition
 export default definePlugin(() => {
     // Event handlers
-    const handlePomodoroWorkEnded = (state: PomodoroState) => {
+    const handleFocusWorkEnded = (state: FocusState) => {
         if (state.subtle_mode) {
             // Play sound briefly for subtle mode
             playAlarmSound(state.sound || 'alarm.mp3', state.volume);
@@ -378,11 +378,11 @@ export default definePlugin(() => {
                 body: `Session ${state.current_session} complete.`
             });
         } else {
-            showModal(<PomodoroNotification sound={state.sound} volume={state.volume} />);
+            showModal(<FocusNotification sound={state.sound} volume={state.volume} />);
         }
     };
 
-    const handlePomodoroBreakEnded = (state: PomodoroState) => {
+    const handleFocusBreakEnded = (state: FocusState) => {
         if (state.subtle_mode) {
             // Play sound briefly for subtle mode
             playAlarmSound(state.sound || 'alarm.mp3', state.volume);
@@ -391,13 +391,13 @@ export default definePlugin(() => {
                 body: `Ready for session ${state.current_session}?`
             });
         } else {
-            showModal(<PomodoroNotification sound={state.sound} volume={state.volume} />);
+            showModal(<FocusNotification sound={state.sound} volume={state.volume} />);
         }
     };
 
     // Register event listeners
-    addEventListener('timeout_pomodoro_work_ended', handlePomodoroWorkEnded);
-    addEventListener('timeout_pomodoro_break_ended', handlePomodoroBreakEnded);
+    addEventListener('timeout_focus_work_ended', handleFocusWorkEnded);
+    addEventListener('timeout_focus_break_ended', handleFocusBreakEnded);
 
     // Missed items toast
     addEventListener('timeout_missed_items_toast', (count: number) => {
@@ -471,8 +471,8 @@ export default definePlugin(() => {
         alwaysRender: true, // Keep plugin state active for overlay visibility
 
         onDismount: () => {
-            removeEventListener('timeout_pomodoro_work_ended', handlePomodoroWorkEnded);
-            removeEventListener('timeout_pomodoro_break_ended', handlePomodoroBreakEnded);
+            removeEventListener('timeout_focus_work_ended', handleFocusWorkEnded);
+            removeEventListener('timeout_focus_break_ended', handleFocusBreakEnded);
             // Unregister settings route and overlay
             routerHook.removeRoute(SETTINGS_ROUTE);
             routerHook.removeGlobalComponent(OVERLAY_COMPONENT_NAME);
