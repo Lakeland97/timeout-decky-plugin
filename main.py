@@ -22,26 +22,26 @@ settings.read()
 
 # Settings keys
 SETTINGS_KEY_SETTINGS = "user_settings"
-SETTINGS_KEY_POMODORO = "pomodoro_state"
+SETTINGS_KEY_FOCUS = "focus_state"
 
 # Limits to prevent excessive data
 
 # Default user settings
 DEFAULT_SETTINGS = {
     "time_format_24h": True,
-    # Pomodoro settings
-    "pomodoro_sound": "alarm.mp3",
-    "pomodoro_volume": 100,
-    "pomodoro_subtle_mode": False,
-    "pomodoro_prevent_sleep": False,
-    "pomodoro_work_duration": 25,  # minutes
-    "pomodoro_break_duration": 5,  # minutes
-    "pomodoro_long_break_duration": 15,  # minutes
-    "pomodoro_sessions_until_long_break": 4,
+    # Focus settings
+    "focus_sound": "alarm.mp3",
+    "focus_volume": 100,
+    "focus_subtle_mode": False,
+    "focus_prevent_sleep": False,
+    "focus_work_duration": 25,  # minutes
+    "focus_break_duration": 5,  # minutes
+    "focus_long_break_duration": 15,  # minutes
+    "focus_sessions_until_long_break": 4,
     # Missed Alerts settings
     "missed_alerts_enabled": True,
     "missed_alerts_window": 24,
-    "pomodoro_suspend_behavior": "continue",
+    "focus_suspend_behavior": "continue",
     # Alert interaction delay (seconds before gaming popups accept input)
     "snooze_activation_delay": 2.0,
     # Overlay settings
@@ -55,16 +55,16 @@ DEFAULT_SETTINGS = {
     "overlay_max_alerts": 2,
     "overlay_time_window": 1,
     "overlay_show_alarms": True,
-    "overlay_show_pomodoros": True,
+    "overlay_show_focus": True,
     "overlay_compact_mode": False,
     "overlay_show_prevent_sleep_badge": True,
     "overlay_show_missed_badge": True,
     # Tab Order
-    "tab_order": ["timers", "alarms", "pomodoro"]
+    "tab_order": ["focus"]
 }
 
 class Plugin:
-    pomodoro_task = None
+    focus_task = None
     suspend_monitor_task = None
     _game_running: bool = False  # Track game state from frontend
     loop = None
@@ -141,13 +141,13 @@ class Plugin:
         inhibiting_items = []
 
 
-        # Pomodoro flagged prevent_sleep
+        # Focus flagged prevent_sleep
         user_settings = await self._get_user_settings()
-        pomodoro = await self._get_pomodoro_state()
-        if pomodoro.get("active", False) and user_settings.get("pomodoro_prevent_sleep", False):
+        focus = await self._get_focus_state()
+        if focus.get("active", False) and user_settings.get("focus_prevent_sleep", False):
             should_inhibit = True
             reason_parts.append("Focus")
-            inhibiting_items.append({"type": "pomodoro", "id": "pomodoro", "label": "Focus"})
+            inhibiting_items.append({"type": "focus", "id": "focus", "label": "Focus"})
 
 
 
@@ -304,10 +304,10 @@ class Plugin:
 
 
         user_settings = await self._get_user_settings()
-        pomodoro = await self._get_pomodoro_state()
-        if (pomodoro.get("active", False) and
-                user_settings.get("pomodoro_prevent_sleep", False)):
-            inhibiting_items.append({"type": "pomodoro", "id": "pomodoro", "label": "Focus"})
+        focus = await self._get_focus_state()
+        if (focus.get("active", False) and
+                user_settings.get("focus_prevent_sleep", False)):
+            inhibiting_items.append({"type": "focus", "id": "focus", "label": "Focus"})
 
 
         return {
@@ -320,10 +320,10 @@ class Plugin:
         decky.logger.info("Timeout: Disabling all sleep inhibitors")
 
 
-        # Stop pomodoro if active
-        pomodoro = await self._get_pomodoro_state()
-        if pomodoro.get("active", False):
-            await self.stop_pomodoro()
+        # Stop focus if active
+        focus = await self._get_focus_state()
+        if focus.get("active", False):
+            await self.stop_focus_session()
 
 
         await self._update_sleep_inhibitor()
@@ -627,15 +627,15 @@ class Plugin:
         decky.logger.info(f"Timeout Debug: {result}")
         return result
 
-    # ==================== POMODORO METHODS ====================
+    # ==================== FOCUS METHODS ====================
 
-    async def start_pomodoro(self) -> dict:
-        """Start a new Pomodoro session."""
+    async def start_focus_session(self) -> dict:
+        """Start a new Focus session."""
         user_settings = await self._get_user_settings()
-        work_duration = user_settings.get("pomodoro_work_duration", 25) * 60
+        work_duration = user_settings.get("focus_work_duration", 25) * 60
         
-        pomodoro_state = await self._get_pomodoro_state()
-        session = pomodoro_state.get("current_session", 0) + 1
+        focus_state = await self._get_focus_state()
+        session = focus_state.get("current_session", 0) + 1
         
         state = {
             "active": True,
@@ -647,37 +647,37 @@ class Plugin:
             "duration": work_duration
         }
         
-        await self._save_pomodoro_state(state)
+        await self._save_focus_state(state)
         
         # Cancel existing task if any
-        if self.pomodoro_task:
-            self.pomodoro_task.cancel()
+        if self.focus_task:
+            self.focus_task.cancel()
         
-        self.pomodoro_task = self.loop.create_task(self._pomodoro_handler())
+        self.focus_task = self.loop.create_task(self._focus_handler())
         
-        decky.logger.info(f"Timeout: Started Pomodoro session {session}")
+        decky.logger.info(f"Timeout: Started Focus session {session}")
         
         # Inject stats for frontend update
-        state["stats"] = await self._get_pomodoro_stats()
+        state["stats"] = await self._get_focus_stats()
         
-        await decky.emit("timeout_pomodoro_started", state)
+        await decky.emit("timeout_focus_started", state)
         # Update sleep inhibitor
         await self._update_sleep_inhibitor()
         return state
 
-    async def stop_pomodoro(self) -> bool:
-        """Stop the current Pomodoro session."""
-        if self.pomodoro_task:
-            self.pomodoro_task.cancel()
-            self.pomodoro_task = None
+    async def stop_focus_session(self) -> bool:
+        """Stop the current Focus session."""
+        if self.focus_task:
+            self.focus_task.cancel()
+            self.focus_task = None
             
         # Update stats for partial session
         try:
-            current_state = await self._get_pomodoro_state()
+            current_state = await self._get_focus_state()
             if current_state.get("active") and current_state.get("start_time"):
                 elapsed = time.time() - current_state.get("start_time")
                 is_break = current_state.get("is_break", False)
-                await self._update_pomodoro_stats(
+                await self._update_focus_stats(
                     is_break=is_break,
                     duration=elapsed,
                     completed_session=not is_break,
@@ -694,49 +694,49 @@ class Plugin:
             "end_time": None,
             "duration": 0
         }
-        await self._save_pomodoro_state(state)
+        await self._save_focus_state(state)
         
-        decky.logger.info("Timeout: Stopped Pomodoro")
+        decky.logger.info("Timeout: Stopped Focus")
         
         # Inject stats
-        state["stats"] = await self._get_pomodoro_stats()
+        state["stats"] = await self._get_focus_stats()
         
-        await decky.emit("timeout_pomodoro_stopped", state)
+        await decky.emit("timeout_focus_stopped", state)
         # Update sleep inhibitor
         await self._update_sleep_inhibitor()
         return True
 
-    async def skip_pomodoro_phase(self) -> dict:
+    async def skip_focus_phase(self) -> dict:
         """Skip the current work/break phase."""
-        pomodoro_state = await self._get_pomodoro_state()
+        focus_state = await self._get_focus_state()
         
-        if not pomodoro_state.get("active"):
-            return pomodoro_state
+        if not focus_state.get("active"):
+            return focus_state
             
         # Update stats for skipped phase
         try:
-            if pomodoro_state.get("start_time"):
-                elapsed = time.time() - pomodoro_state.get("start_time")
-                is_break = pomodoro_state.get("is_break", False)
-                await self._update_pomodoro_stats(
+            if focus_state.get("start_time"):
+                elapsed = time.time() - focus_state.get("start_time")
+                is_break = focus_state.get("is_break", False)
+                await self._update_focus_stats(
                     is_break=is_break,
                     duration=elapsed,
                     completed_session=not is_break,
-                    completed_cycle=is_break and pomodoro_state.get("break_type") == "long"
+                    completed_cycle=is_break and focus_state.get("break_type") == "long"
                 )
         except Exception as e:
             decky.logger.error(f"Timeout: Failed to update stats on skip: {e}")
         
         user_settings = await self._get_user_settings()
-        is_break = pomodoro_state.get("is_break", False)
-        session = pomodoro_state.get("current_session", 1)
+        is_break = focus_state.get("is_break", False)
+        session = focus_state.get("current_session", 1)
         
-        cycle = pomodoro_state.get("current_cycle", 1)
+        cycle = focus_state.get("current_cycle", 1)
         
         if is_break:
             # Starting new work session from break
             # Check if a long break just finished
-            was_long_break = pomodoro_state.get("break_type") == "long"
+            was_long_break = focus_state.get("break_type") == "long"
             
             if was_long_break:
                 new_session = 1
@@ -745,8 +745,8 @@ class Plugin:
                 new_session = session + 1
                 new_cycle = cycle
 
-            work_duration = user_settings.get("pomodoro_work_duration", 25) * 60
-            work_duration = user_settings.get("pomodoro_work_duration", 25) * 60
+            work_duration = user_settings.get("focus_work_duration", 25) * 60
+            work_duration = user_settings.get("focus_work_duration", 25) * 60
             state = {
                 "active": True,
                 "is_break": False,
@@ -758,12 +758,12 @@ class Plugin:
             }
         else:
             # Starting break
-            sessions_until_long = user_settings.get("pomodoro_sessions_until_long_break", 4)
+            sessions_until_long = user_settings.get("focus_sessions_until_long_break", 4)
             if session % sessions_until_long == 0:
-                break_duration = user_settings.get("pomodoro_long_break_duration", 15) * 60
+                break_duration = user_settings.get("focus_long_break_duration", 15) * 60
                 break_type = "long"
             else:
-                break_duration = user_settings.get("pomodoro_break_duration", 5) * 60
+                break_duration = user_settings.get("focus_break_duration", 5) * 60
                 break_type = "short"
             
             state = {
@@ -777,20 +777,20 @@ class Plugin:
                 "break_type": break_type
             }
         
-        await self._save_pomodoro_state(state)
+        await self._save_focus_state(state)
         
         # Restart handler
-        if self.pomodoro_task:
-            self.pomodoro_task.cancel()
-        self.pomodoro_task = self.loop.create_task(self._pomodoro_handler())
+        if self.focus_task:
+            self.focus_task.cancel()
+        self.focus_task = self.loop.create_task(self._focus_handler())
         
         # Inject stats for frontend
-        state["stats"] = await self._get_pomodoro_stats()
+        state["stats"] = await self._get_focus_stats()
         
-        await decky.emit("timeout_pomodoro_phase_changed", state)
+        await decky.emit("timeout_focus_phase_changed", state)
         return state
 
-    async def _get_pomodoro_stats(self) -> dict:
+    async def _get_focus_stats(self) -> dict:
         """Get stats from user settings, handling daily buffer reset and streak tracking."""
         settings = await self._get_user_settings()
         # Default structure with new fields
@@ -809,7 +809,7 @@ class Plugin:
             "longest_streak": 0
         }
         
-        stats = settings.get("pomodoro_stats", {})
+        stats = settings.get("focus_stats", {})
         # Merge defaults for missing keys
         for k, v in defaults.items():
             if k not in stats:
@@ -851,17 +851,17 @@ class Plugin:
             stats["last_active_date"] = today
             
             # Save reset stats immediately to prevent zeroed stats on next read
-            settings["pomodoro_stats"] = stats
+            settings["focus_stats"] = stats
             await self.settings_setSetting(SETTINGS_KEY_SETTINGS, settings)
             await self.settings_commit()
             
         return stats
 
-    async def _update_pomodoro_stats(self, is_break: bool, duration: float, completed_session: bool = False, completed_cycle: bool = False):
+    async def _update_focus_stats(self, is_break: bool, duration: float, completed_session: bool = False, completed_cycle: bool = False):
         """Update persistent stats."""
         settings = await self._get_user_settings()
         # Get fresh stats via helper which handles reset logic
-        stats = await self._get_pomodoro_stats()
+        stats = await self._get_focus_stats()
         
         # Add duration (ensure positive)
         duration = max(0, duration)
@@ -889,12 +889,12 @@ class Plugin:
             stats["total_cycles"] = stats.get("total_cycles", 0) + 1
             
         # Save back to settings
-        settings["pomodoro_stats"] = stats
+        settings["focus_stats"] = stats
         await self.settings_setSetting(SETTINGS_KEY_SETTINGS, settings)
         await self.settings_commit()
 
-    async def reset_pomodoro_stats(self) -> bool:
-        """Reset all Pomodoro statistics."""
+    async def reset_focus_stats(self) -> bool:
+        """Reset all Focus statistics."""
         defaults = {
             "daily_focus_time": 0,
             "daily_break_time": 0,
@@ -911,24 +911,24 @@ class Plugin:
         }
         
         settings = await self._get_user_settings()
-        settings["pomodoro_stats"] = defaults
+        settings["focus_stats"] = defaults
         await self.settings_setSetting(SETTINGS_KEY_SETTINGS, settings)
         await self.settings_commit()
         return True
 
-    async def get_pomodoro_state(self) -> dict:
-        """Get current Pomodoro state with remaining time."""
-        state = await self._get_pomodoro_state()
+    async def get_focus_state(self) -> dict:
+        """Get current Focus state with remaining time."""
+        state = await self._get_focus_state()
         if state.get("active") and state.get("end_time"):
             state["remaining"] = max(0, state["end_time"] - time.time())
         else:
             state["remaining"] = 0
             
-        state["stats"] = await self._get_pomodoro_stats()
+        state["stats"] = await self._get_focus_stats()
         return state
 
-    async def _pomodoro_handler(self):
-        """Background task to handle Pomodoro timing."""
+    async def _focus_handler(self):
+        """Background task to handle Focus timing."""
         try:
             while True:
                 now = time.time()
@@ -937,7 +937,7 @@ class Plugin:
                     await asyncio.sleep(0.5)
                     continue
 
-                state = await self._get_pomodoro_state()
+                state = await self._get_focus_state()
                 
                 if not state.get("active"):
                     return
@@ -953,17 +953,17 @@ class Plugin:
                     
                     # Check if missed by > 60 seconds
                     if remaining < -60:
-                        decky.logger.info(f"Timeout: Pomodoro phase missed by {abs(remaining):.0f}s")
-                        missed_label = f"Pomodoro: {'Break' if is_break else 'Focus Session'} {session}"
+                        decky.logger.info(f"Timeout: Focus phase missed by {abs(remaining):.0f}s")
+                        missed_label = f"Focus: {'Break' if is_break else 'Focus Session'} {session}"
                         # Use scheduled end time as due time
                         due_time = state.get("end_time", time.time())
-                        await self._add_missed_item("pomodoro", "pomodoro", missed_label, due_time)
+                        await self._add_missed_item("focus", "focus", missed_label, due_time)
                         
                         # Stop the cycle (do not auto-advance)
                         # Credit the session duration (capped) because it "finished"
                         elapsed = state.get("duration", 0) # Use intended duration
                         try:
-                            await self._update_pomodoro_stats(
+                            await self._update_focus_stats(
                                 is_break=is_break,
                                 duration=elapsed,
                                 completed_session=not is_break,
@@ -973,11 +973,11 @@ class Plugin:
                             decky.logger.error(f"Timeout: Stats update error: {e}")
 
                         # Reset state to inactive
-                        new_state = await self._get_pomodoro_state()
+                        new_state = await self._get_focus_state()
                         new_state["active"] = False
                         new_state["remaining"] = 0
-                        await self._save_pomodoro_state(new_state)
-                        await decky.emit("timeout_pomodoro_updated", new_state)
+                        await self._save_focus_state(new_state)
+                        await decky.emit("timeout_focus_updated", new_state)
                         # Update sleep inhibitor
                         await self._update_sleep_inhibitor()
                         return # Exit loop
@@ -986,7 +986,7 @@ class Plugin:
                     try:
                         if state.get("start_time"):
                             elapsed = time.time() - state.get("start_time")
-                            await self._update_pomodoro_stats(
+                            await self._update_focus_stats(
                                 is_break=is_break,
                                 duration=elapsed,
                                 completed_session=not is_break,
@@ -997,9 +997,9 @@ class Plugin:
                     
                     if is_break:
                         # Break finished, start new work session
-                        work_duration = user_settings.get("pomodoro_work_duration", 25) * 60
-                        pomodoro_sound = user_settings.get("pomodoro_sound", "alarm.mp3")
-                        is_subtle = user_settings.get("pomodoro_subtle_mode", False)
+                        work_duration = user_settings.get("focus_work_duration", 25) * 60
+                        focus_sound = user_settings.get("focus_sound", "alarm.mp3")
+                        is_subtle = user_settings.get("focus_subtle_mode", False)
                         
                         # Check if a long break just finished
                         was_long_break = state.get("break_type") == "long"
@@ -1018,19 +1018,19 @@ class Plugin:
                             "start_time": time.time(),
                             "end_time": time.time() + work_duration,
                             "duration": work_duration,
-                            "sound": pomodoro_sound,
+                            "sound": focus_sound,
                             "subtle_mode": is_subtle,
-                            "stats": await self._get_pomodoro_stats()
+                            "stats": await self._get_focus_stats()
                         }
-                        await decky.emit("timeout_pomodoro_break_ended", new_state)
+                        await decky.emit("timeout_focus_break_ended", new_state)
                     else:
                         # Work finished, start break
-                        sessions_until_long = user_settings.get("pomodoro_sessions_until_long_break", 4)
+                        sessions_until_long = user_settings.get("focus_sessions_until_long_break", 4)
                         if session % sessions_until_long == 0:
-                            break_duration = user_settings.get("pomodoro_long_break_duration", 15) * 60
+                            break_duration = user_settings.get("focus_long_break_duration", 15) * 60
                             break_type = "long"
                         else:
-                            break_duration = user_settings.get("pomodoro_break_duration", 5) * 60
+                            break_duration = user_settings.get("focus_break_duration", 5) * 60
                             break_type = "short"
                         
                         new_state = {
@@ -1042,17 +1042,17 @@ class Plugin:
                             "end_time": time.time() + break_duration,
                             "duration": break_duration,
                             "break_type": break_type,
-                            "sound": user_settings.get("pomodoro_sound", "alarm.mp3"),
-                            "subtle_mode": user_settings.get("pomodoro_subtle_mode", False),
-                            "stats": await self._get_pomodoro_stats()
+                            "sound": user_settings.get("focus_sound", "alarm.mp3"),
+                            "subtle_mode": user_settings.get("focus_subtle_mode", False),
+                            "stats": await self._get_focus_stats()
                         }
-                        await decky.emit("timeout_pomodoro_work_ended", new_state)
+                        await decky.emit("timeout_focus_work_ended", new_state)
                     
-                    await self._save_pomodoro_state(new_state)
-                    decky.logger.info(f"Timeout: Pomodoro phase changed - is_break={new_state['is_break']}")
+                    await self._save_focus_state(new_state)
+                    decky.logger.info(f"Timeout: Focus phase changed - is_break={new_state['is_break']}")
                 
                 # Emit tick every 5 seconds
-                await decky.emit("timeout_pomodoro_tick", {
+                await decky.emit("timeout_focus_tick", {
                     "remaining": int(max(0, remaining)),
                     "is_break": state.get("is_break", False),
                     "session": state.get("current_session", 1),
@@ -1062,10 +1062,10 @@ class Plugin:
                 await asyncio.sleep(1)  # Update every second for real-time display
                 
         except asyncio.CancelledError:
-            decky.logger.info("Timeout: Pomodoro handler stopped")
+            decky.logger.info("Timeout: Focus handler stopped")
 
-    async def _get_pomodoro_state(self) -> dict:
-        return await self.settings_getSetting(SETTINGS_KEY_POMODORO, {
+    async def _get_focus_state(self) -> dict:
+        return await self.settings_getSetting(SETTINGS_KEY_FOCUS, {
             "active": False,
             "is_break": False,
             "current_session": 0,
@@ -1074,8 +1074,8 @@ class Plugin:
             "duration": 0
         })
 
-    async def _save_pomodoro_state(self, state: dict):
-        await self.settings_setSetting(SETTINGS_KEY_POMODORO, state)
+    async def _save_focus_state(self, state: dict):
+        await self.settings_setSetting(SETTINGS_KEY_FOCUS, state)
         await self.settings_commit()
 
     # ==================== SETTINGS METHODS ====================
@@ -1104,7 +1104,7 @@ class Plugin:
         
         
         # Update sleep inhibitor if prevent_sleep settings changed
-        if any(k in new_settings for k in ("pomodoro_prevent_sleep",)):
+        if any(k in new_settings for k in ("focus_prevent_sleep",)):
             await self._update_sleep_inhibitor()
                 
         await self.settings_commit()
@@ -1144,27 +1144,27 @@ class Plugin:
         sleep_preventing_alerts = []  # Always shown, regardless of filters
         
         
-        # Pomodoro - always check for sleep-preventing
-        pomodoro = await self._get_pomodoro_state()
-        if pomodoro.get("active") and pomodoro.get("end_time"):
-            remaining = int(pomodoro["end_time"] - now)
+        # Focus - always check for sleep-preventing
+        focus = await self._get_focus_state()
+        if focus.get("active") and focus.get("end_time"):
+            remaining = int(focus["end_time"] - now)
             if remaining > 0:
-                phase = "Break" if pomodoro.get("is_break") else "Focus"
-                session = pomodoro.get("current_session", 1)
-                is_preventing = user_settings.get("pomodoro_prevent_sleep", False)
+                phase = "Break" if focus.get("is_break") else "Focus"
+                session = focus.get("current_session", 1)
+                is_preventing = user_settings.get("focus_prevent_sleep", False)
                 alert = {
-                    "id": "pomodoro",
-                    "category": "pomodoro",
+                    "id": "focus",
+                    "category": "focus",
                     "label": f"{phase} #{session}",
-                    "time": pomodoro["end_time"],
+                    "time": focus["end_time"],
                     "remaining": remaining,
-                    "subtle_mode": user_settings.get("pomodoro_subtle_mode", False),
+                    "subtle_mode": user_settings.get("focus_subtle_mode", False),
                     "auto_suspend": False,
                     "prevent_sleep": is_preventing
                 }
                 if is_preventing:
                     sleep_preventing_alerts.append(alert)
-                elif user_settings.get("overlay_show_pomodoros", True):
+                elif user_settings.get("overlay_show_focus", True):
                     alerts.append(alert)
         
         # Combine: sleep-preventing alerts first (sorted by time), then regular alerts
@@ -1370,6 +1370,66 @@ class Plugin:
                 del updated[stale_key]
                 changed = True
 
+        # --- v2 strip: rename pomodoro_* settings keys → focus_* (idempotent) ---
+        if "focus_work_duration" not in updated:
+            _POMODORO_TO_FOCUS = {
+                "pomodoro_sound": "focus_sound",
+                "pomodoro_volume": "focus_volume",
+                "pomodoro_subtle_mode": "focus_subtle_mode",
+                "pomodoro_prevent_sleep": "focus_prevent_sleep",
+                "pomodoro_work_duration": "focus_work_duration",
+                "pomodoro_break_duration": "focus_break_duration",
+                "pomodoro_long_break_duration": "focus_long_break_duration",
+                "pomodoro_sessions_until_long_break": "focus_sessions_until_long_break",
+                "pomodoro_suspend_behavior": "focus_suspend_behavior",
+                "pomodoro_stats": "focus_stats",
+                "overlay_show_pomodoros": "overlay_show_focus",
+            }
+            for _old, _new in _POMODORO_TO_FOCUS.items():
+                if _old in updated:
+                    if _new not in updated:
+                        updated[_new] = updated[_old]
+                    del updated[_old]
+                    changed = True
+            decky.logger.info("Timeout: Renamed pomodoro_* settings keys → focus_*")
+
+        # Drop legacy timer_/alarm_/preset_ keys + stale overlay toggles removed in v2
+        for _stale in list(updated.keys()):
+            if (_stale.startswith("timer_") or _stale.startswith("alarm_")
+                    or _stale.startswith("preset_") or _stale in (
+                        "overlay_show_timers", "overlay_show_alarms", "snooze_duration")):
+                del updated[_stale]
+                changed = True
+
+        # Rewrite tab_order: drop removed tabs, rename pomodoro → focus, default to ["focus"]
+        _tab_order = updated.get("tab_order")
+        if isinstance(_tab_order, list):
+            _seen = set(); _new_order = []
+            for _tab in _tab_order:
+                if _tab in ("timers", "alarms"):
+                    continue
+                _tab = "focus" if _tab == "pomodoro" else _tab
+                if _tab not in _seen:
+                    _seen.add(_tab); _new_order.append(_tab)
+            if not _new_order:
+                _new_order = ["focus"]
+            if _new_order != _tab_order:
+                updated["tab_order"] = _new_order
+                changed = True
+        elif _tab_order is None:
+            updated["tab_order"] = ["focus"]
+            changed = True
+
+        # --- v2 strip: rename active-state blob pomodoro_state → focus_state (idempotent) ---
+        # Decky SettingsManager has no public delete; legacy key is nulled after copy.
+        if await self.settings_getSetting(SETTINGS_KEY_FOCUS, None) is None:
+            _legacy_state = await self.settings_getSetting("pomodoro_state", None)
+            if _legacy_state is not None:
+                await self.settings_setSetting(SETTINGS_KEY_FOCUS, _legacy_state)
+                await self.settings_setSetting("pomodoro_state", None)
+                changed = True
+                decky.logger.info("Timeout: Renamed pomodoro_state blob → focus_state")
+
         if changed:
             await self.settings_setSetting(SETTINGS_KEY_SETTINGS, updated)
             await self.settings_commit()
@@ -1415,53 +1475,53 @@ class Plugin:
         return True
 
 
-    async def _check_missed_pomodoro(self, start_time: float, end_time: float):
-        """Check for pomodoro session interruptions."""
-        pomodoro = await self._get_pomodoro_state()
-        if not pomodoro.get("active"):
+    async def _check_missed_focus(self, start_time: float, end_time: float):
+        """Check for focus session interruptions."""
+        focus = await self._get_focus_state()
+        if not focus.get("active"):
              return
 
         user_settings = await self._get_user_settings()
-        behavior = user_settings.get("pomodoro_suspend_behavior", "continue")
+        behavior = user_settings.get("focus_suspend_behavior", "continue")
         
         if behavior == "pause":
              # Shift end_time by suspend duration
              suspend_duration = end_time - start_time
-             if pomodoro.get("end_time"):
-                 pomodoro["end_time"] += suspend_duration
-                 await self._save_pomodoro_state(pomodoro)
-                 decky.logger.info(f"Timeout: Pomodoro paused during suspend. Extended by {suspend_duration:.0f}s")
+             if focus.get("end_time"):
+                 focus["end_time"] += suspend_duration
+                 await self._save_focus_state(focus)
+                 decky.logger.info(f"Timeout: Focus paused during suspend. Extended by {suspend_duration:.0f}s")
                  
                  # Restart the task to respect new end time
-                 if hasattr(self, 'pomodoro_task') and self.pomodoro_task:
-                     self.pomodoro_task.cancel()
-                 self.pomodoro_task = self.loop.create_task(self._pomodoro_handler())
+                 if hasattr(self, 'focus_task') and self.focus_task:
+                     self.focus_task.cancel()
+                 self.focus_task = self.loop.create_task(self._focus_handler())
              return
         
         # Else "continue" (Report Missed)
-        p_end = pomodoro.get("end_time", 0)
+        p_end = focus.get("end_time", 0)
         # Check if it finished during suspend window
         if p_end <= end_time:
              # Session finished during suspend
              
              # Cancel existing handler first to prevent double-fire
-             if hasattr(self, 'pomodoro_task') and self.pomodoro_task:
-                 self.pomodoro_task.cancel()
-                 self.pomodoro_task = None
+             if hasattr(self, 'focus_task') and self.focus_task:
+                 self.focus_task.cancel()
+                 self.focus_task = None
              
              # Add missed item
-             label = "Pomodoro Break" if pomodoro.get("is_break") else "Pomodoro Focus"
+             label = "Focus Break" if focus.get("is_break") else "Focus Focus"
              finished_at_str = datetime.fromtimestamp(p_end).strftime('%H:%M')
              details = f"Session finished at {finished_at_str}"
              
-             await self._add_missed_item("pomodoro", "pomodoro-session", label, p_end, details)
+             await self._add_missed_item("focus", "focus-session", label, p_end, details)
              
              # Mark inactive
-             pomodoro["active"] = False
-             pomodoro["remaining"] = 0
-             await self._save_pomodoro_state()
+             focus["active"] = False
+             focus["remaining"] = 0
+             await self._save_focus_state()
              
-             await decky.emit("timeout_pomodoro_updated", pomodoro)
+             await decky.emit("timeout_focus_updated", focus)
 
     # ==================== LIFECYCLE METHODS ====================
 
@@ -1489,16 +1549,16 @@ class Plugin:
                         check_start = max(self.last_tick, now - (window_hours * 3600))
                         
                         
-                        # Run historical checks for Pomodoro ONLY if mode is CONTINUE
+                        # Run historical checks for Focus ONLY if mode is CONTINUE
                         
-                        if user_settings.get("pomodoro_suspend_behavior", "continue") == "continue":
-                            await self._check_missed_pomodoro(check_start, now)
+                        if user_settings.get("focus_suspend_behavior", "continue") == "continue":
+                            await self._check_missed_focus(check_start, now)
 
                     # Run Pause (Shift) logic regardless of missed_alerts_enabled
                     # Shift logic handles its own behavior check internally
                     
-                    if user_settings.get("pomodoro_suspend_behavior", "continue") == "pause":
-                        await self._check_missed_pomodoro(self.last_tick, now)
+                    if user_settings.get("focus_suspend_behavior", "continue") == "pause":
+                        await self._check_missed_focus(self.last_tick, now)
                         
                     # Wait briefly for synchronous checkers to resume
                     await asyncio.sleep(1)
@@ -1528,12 +1588,12 @@ class Plugin:
         await self._migrate_settings_schema()
 
         current_time = time.time()
-        # Resume Pomodoro if active
-        pomodoro = await self._get_pomodoro_state()
-        if pomodoro.get("active") and pomodoro.get("end_time"):
-            if pomodoro["end_time"] > current_time:
-                decky.logger.info("Timeout: Resuming Pomodoro session")
-                self.pomodoro_task = self.loop.create_task(self._pomodoro_handler())
+        # Resume Focus if active
+        focus = await self._get_focus_state()
+        if focus.get("active") and focus.get("end_time"):
+            if focus["end_time"] > current_time:
+                decky.logger.info("Timeout: Resuming Focus session")
+                self.focus_task = self.loop.create_task(self._focus_handler())
         
         
         # Start suspend monitor
@@ -1551,10 +1611,10 @@ class Plugin:
             
             
             
-            # 3. Cancel Pomodoro task
-            if self.pomodoro_task:
-                self.pomodoro_task.cancel()
-                self.pomodoro_task = None
+            # 3. Cancel Focus task
+            if self.focus_task:
+                self.focus_task.cancel()
+                self.focus_task = None
             
             # 4. Cancel suspend monitor
             if self.suspend_monitor_task:
@@ -1565,7 +1625,7 @@ class Plugin:
             await self.settings_setSetting(SETTINGS_KEY_SETTINGS, DEFAULT_SETTINGS)
             
             # 6. Clear all data keys
-            await self.settings_setSetting(SETTINGS_KEY_POMODORO, {
+            await self.settings_setSetting(SETTINGS_KEY_FOCUS, {
                 "active": False,
                 "is_break": False,
                 "current_session": 1,
@@ -1574,8 +1634,8 @@ class Plugin:
             })
             await self.settings_setSetting("missed_alerts_items", [])
             
-            # 7. Reset Pomodoro stats
-            await self.settings_setSetting("pomodoro_stats", {
+            # 7. Reset Focus stats
+            await self.settings_setSetting("focus_stats", {
                 "daily_focus_time": 0,
                 "daily_break_time": 0,
                 "daily_sessions": 0,
@@ -1595,7 +1655,7 @@ class Plugin:
             
             # 9. Emit update events to frontend
             await decky.emit("timeout_settings_updated", DEFAULT_SETTINGS)
-            await decky.emit("timeout_pomodoro_updated", {
+            await decky.emit("timeout_focus_updated", {
                 "active": False,
                 "is_break": False,
                 "current_session": 1,
@@ -1618,9 +1678,9 @@ class Plugin:
         """Plugin unload cleanup."""
         
         
-        # Cancel Pomodoro
-        if self.pomodoro_task:
-            self.pomodoro_task.cancel()
+        # Cancel Focus
+        if self.focus_task:
+            self.focus_task.cancel()
         
         # Cancel suspend monitor
         if self.suspend_monitor_task:
