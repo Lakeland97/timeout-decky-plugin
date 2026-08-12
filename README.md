@@ -10,13 +10,13 @@ Play-time limits, focus modes, and parental controls for Steam Deck.
 
 ## Features
 
-✓ = shipped. ✗ = planned.
+✓ shipped · ◐ WIP · ✗ planned
 
 ### ⚡ Focus
 - ✓ Focus sessions
 - ✓ Statistics
 - ✓ Background persistence
-- ✗ Take-a-break
+- ◐ Take-a-break
 
 ### 🔊 Custom sounds
 - ✓ Import custom sounds
@@ -28,24 +28,25 @@ Play-time limits, focus modes, and parental controls for Steam Deck.
 - ✓ Export/import backup
 
 ### 🎮 Game Limits
-- ✗ Game selection
-- ✗ Limits
-- ✗ Budgets
-- ✗ Half-opens
-- ✗ Cooldowns
-- ✗ Curfew
-- ✗ Concession
+- ◐ Game selection
+- ◐ Limits
+- ◐ Budgets
+- ◐ Half-opens
+- ◐ Cooldowns
+- ◐ Curfew
+- ◐ Concession
 
 ### 🎯 Focus enforcement tiers
-- ✗ Loose
-- ✗ Steady
-- ✗ Strict
+- ◐ Soft
+- ◐ Medium
+- ◐ Hard
 
 ### 🔒 Parental controls + passcode
-- ✗ Self-control mode
-- ✗ Administrative lockout
+- ◐ Self-control mode
+- ◐ Administrative lockout
 
 ### 🔥 Streaks
+- ◐ Game-limits streak
 - ✗ Unified metric
 
 > [Open an issue](https://github.com/Lakeland97/timeout-decky-plugin/issues) if you have feedback.
