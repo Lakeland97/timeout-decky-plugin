@@ -60,6 +60,7 @@ export interface UserSettings {
     focus_sessions_until_long_break: number;
     focus_default_tier: FocusTier;  // soft | medium | hard
     focus_take_a_break_max_per_session: number;
+    parental_controls: ParentalControls;
     focus_daily_goal_enabled: boolean;
     focus_daily_goal: number;  // hours per day goal
     // Missed Alerts Global Settings
@@ -229,8 +230,11 @@ export type AdhocBreakMinutes = 1 | 2 | 3 | 5 | 7 | 10;
 
 export type ParentalMode = 'self' | 'admin';
 
+export type ParentalLockedFeature = 'game_limits' | 'focus_tier' | 'take_a_break';
+
 export interface ParentalControls {
     enabled: boolean;
     passcode: string;   // plaintext STUB — not real auth; revisit before release
     mode: ParentalMode;
+    locked_features: ParentalLockedFeature[];
 }

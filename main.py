@@ -92,8 +92,9 @@ DEFAULT_SETTINGS = {
     # Parental controls (sub-project D) — stub, NOT real auth
     "parental_controls": {
         "enabled": False,
-        "passcode": "",  # plaintext stub — revisit before any real release
-        "mode": "self"   # "self" | "admin"
+        "passcode": "",  # plaintext STUB — NOT real auth; revisit before any release
+        "mode": "self",  # "self" (locked) | "admin" (unlocked)
+        "locked_features": ["game_limits", "focus_tier", "take_a_break"]
     },
     # Game Limits streak (v1: local to game-limits; unify with Focus later)
     "game_limits_current_streak": 0,
@@ -749,6 +750,8 @@ class Plugin:
 
     async def set_focus_tier(self, tier: str) -> dict:
         """Change the enforcement tier of the active session (on-demand focus)."""
+        if await self._parental_locked("focus_tier"):
+            return {"error": "parental_locked"}
         if tier not in ("soft", "medium", "hard"):
             return {"error": "invalid_tier"}
         state = await self._get_focus_state()
@@ -850,6 +853,8 @@ class Plugin:
         """Take-a-break: end the current work phase and start a custom-duration
         short break. Friction-capped (focus_take_a_break_max_per_session).
         Does NOT break the streak."""
+        if await self._parental_locked("take_a_break"):
+            return {"error": "parental_locked"}
         focus = await self._get_focus_state()
         if not focus.get("active"):
             return {"error": "not_active"}
@@ -1198,6 +1203,8 @@ class Plugin:
         return await self._get_game_limits_config()
 
     async def update_game_limits_config(self, partial: dict) -> dict:
+        if await self._parental_locked("game_limits"):
+            return {"error": "parental_locked"}
         us = await self._get_user_settings()
         cfg = us.get("game_limits_config", DEFAULT_SETTINGS["game_limits_config"])
         cfg = json.loads(json.dumps(cfg))
@@ -1634,6 +1641,63 @@ class Plugin:
 
 
 
+
+    # ---------------- Parental controls (sub-project D) ----------------
+    # NOTE: passcode is a plaintext STUB — not real authentication. Revisit before release.
+
+    async def _parental_locked(self, feature: str) -> bool:
+        pc = (await self._get_user_settings()).get("parental_controls", {})
+        if not pc.get("enabled") or pc.get("mode") != "self":
+            return False
+        return feature in pc.get("locked_features", ["game_limits", "focus_tier", "take_a_break"])
+
+    async def get_parental_controls(self) -> dict:
+        return (await self._get_user_settings()).get("parental_controls", DEFAULT_SETTINGS["parental_controls"])
+
+    async def update_parental_controls(self, partial: dict) -> dict:
+        # Gated: once enabled in self mode, you must unlock (admin) to change it.
+        us = await self._get_user_settings()
+        pc = json.loads(json.dumps(us.get("parental_controls", DEFAULT_SETTINGS["parental_controls"])))
+        if pc.get("enabled") and pc.get("mode") == "self":
+            return {"error": "parental_locked"}
+        if "enabled" in partial:
+            pc["enabled"] = bool(partial["enabled"])
+        if "passcode" in partial:
+            pc["passcode"] = str(partial["passcode"] or "")
+        if "locked_features" in partial:
+            pc["locked_features"] = list(partial["locked_features"])
+        if "mode" in partial:
+            pc["mode"] = partial["mode"]
+        us["parental_controls"] = pc
+        await self.settings_setSetting(SETTINGS_KEY_SETTINGS, us)
+        await self.settings_commit()
+        await decky.emit("timeout_settings_updated", us)
+        return pc
+
+    async def verify_parental_passcode(self, code: str) -> dict:
+        us = await self._get_user_settings()
+        pc = us.get("parental_controls", DEFAULT_SETTINGS["parental_controls"])
+        if not pc.get("enabled"):
+            return {"ok": True, "controls": pc}
+        if pc.get("passcode") and str(code) == str(pc.get("passcode")):
+            pc2 = json.loads(json.dumps(pc))
+            pc2["mode"] = "admin"
+            us["parental_controls"] = pc2
+            await self.settings_setSetting(SETTINGS_KEY_SETTINGS, us)
+            await self.settings_commit()
+            await decky.emit("timeout_settings_updated", us)
+            return {"ok": True, "controls": pc2}
+        return {"ok": False}
+
+    async def lock_parental(self) -> bool:
+        us = await self._get_user_settings()
+        pc = json.loads(json.dumps(us.get("parental_controls", DEFAULT_SETTINGS["parental_controls"])))
+        pc["mode"] = "self"
+        us["parental_controls"] = pc
+        await self.settings_setSetting(SETTINGS_KEY_SETTINGS, us)
+        await self.settings_commit()
+        await decky.emit("timeout_settings_updated", us)
+        return True
 
     async def get_overlay_data(self) -> dict:
         """Get aggregated data for the in-game overlay.

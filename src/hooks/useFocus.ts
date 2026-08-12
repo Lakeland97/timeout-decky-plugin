@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { addEventListener, removeEventListener, callable } from '@decky/api';
 import type { FocusState, FocusTickEvent, FocusTier } from '../types';
+import { showUnlockModal } from '../components/PasscodeModal';
 
 // Backend callables
 const startFocusCall = callable<[tier: string | null], FocusState>('start_focus_session');
@@ -77,7 +78,11 @@ export function useFocus() {
     const startAdhocBreak = useCallback(async (min: number) => {
         try {
             const newState = await startAdhocBreakCall(min);
-            if (!('error' in newState)) setState(newState);
+            if ('error' in newState) {
+                if (newState.error === 'parental_locked') showUnlockModal();
+            } else {
+                setState(newState);
+            }
         } catch (e) {
             console.error('Failed to start ad-hoc break:', e);
         }
@@ -87,7 +92,11 @@ export function useFocus() {
     const setFocusTier = useCallback(async (tier: string) => {
         try {
             const newState = await setFocusTierCall(tier);
-            if (!('error' in newState)) setState(newState);
+            if ('error' in newState) {
+                if (newState.error === 'parental_locked') showUnlockModal();
+            } else {
+                setState(newState);
+            }
         } catch (e) {
             console.error('Failed to set focus tier:', e);
         }

@@ -21,6 +21,7 @@ import { playAlarmSound } from "../utils/sounds";
 import { showExportModal, showImportModal } from "./BackupModals";
 import { BinarySelector } from "./BinarySelector";
 import { GameLimitsSettingsPage } from "./GameLimitsSettingsPage";
+import { ParentalControlsSettingsPage } from "./ParentalControlsSettingsPage";
 import type { SoundFile, FocusTier } from "../types";
 
 // Backend callables
@@ -933,6 +934,11 @@ export const SettingsPage = () => {
             title: "Game Limits",
             icon: <FaGamepad size={16} />,
             content: <GameLimitsSettingsPage />
+        },
+        {
+            title: "Parental",
+            icon: <FaShieldAlt size={16} />,
+            content: <ParentalControlsSettingsPage />
         },
         {
             title: "Overlay",

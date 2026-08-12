@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { addEventListener, removeEventListener, callable } from '@decky/api';
 import type { GameLimitsConfig, GameLimitsGlobal, GameLimitsOverride, GameLimitsMode, GameLimitsState, GameLaunchDecision, GameLaunchMode } from '../types';
+import { showUnlockModal } from '../components/PasscodeModal';
 
 // Nested-partial update shape (backend deep-merges 'global' and replaces 'per_game')
 export type GameLimitsConfigUpdate = {
@@ -19,7 +20,7 @@ export const getInstalledGames = callable<[], { appid: string; name: string }[]>
 
 // Hook-only callables
 const getConfigCall = callable<[], GameLimitsConfig>('get_game_limits_config');
-const updateConfigCall = callable<[partial: GameLimitsConfigUpdate], GameLimitsConfig>('update_game_limits_config');
+const updateConfigCall = callable<[partial: GameLimitsConfigUpdate], GameLimitsConfig | { error: string }>('update_game_limits_config');
 const getStateCall = callable<[], GameLimitsState>('get_game_limits_state');
 const resetStreakCall = callable<[], boolean>('reset_game_limits_streak');
 
@@ -55,6 +56,10 @@ export function useGameLimits() {
 
     const updateConfig = useCallback(async (partial: GameLimitsConfigUpdate) => {
         const cfg = await updateConfigCall(partial);
+        if ('error' in cfg) {
+            if (cfg.error === 'parental_locked') showUnlockModal();
+            return cfg;
+        }
         setConfig(cfg);
         return cfg;
     }, []);
