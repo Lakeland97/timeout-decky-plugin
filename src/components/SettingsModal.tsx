@@ -20,7 +20,9 @@ import { useSounds } from "../hooks/useSounds";
 import { playAlarmSound } from "../utils/sounds";
 import { showExportModal, showImportModal } from "./BackupModals";
 import { BinarySelector } from "./BinarySelector";
-import type { SoundFile } from "../types";
+import { GameLimitsSettingsPage } from "./GameLimitsSettingsPage";
+import { ParentalControlsSettingsPage } from "./ParentalControlsSettingsPage";
+import type { SoundFile, FocusTier } from "../types";
 
 // Backend callables
 const factoryResetCall = callable<[], boolean>('factory_reset');
@@ -215,6 +217,38 @@ const FocusSettingsPage = () => {
                         step={1}
                         onChange={(value) => updateSetting('focus_sessions_until_long_break', value)}
                         icon={<FaClock size={16} />}
+                    />
+                </PanelSectionRow>
+
+                <PanelSectionRow>
+                    <Focusable flow-children="row" style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+                        <FaShieldAlt style={{ color: '#888', flexShrink: 0 }} size={16} />
+                        <span style={{ flexShrink: 0 }}>Default Tier</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <Dropdown
+                                rgOptions={[
+                                    { data: 'soft', label: 'Soft — track only' },
+                                    { data: 'medium', label: 'Medium — warn on game launch' },
+                                    { data: 'hard', label: 'Hard — block games during work' }
+                                ]}
+                                selectedOption={settings.focus_default_tier ?? 'soft'}
+                                onChange={(o) => updateSetting('focus_default_tier', o.data as FocusTier)}
+                                strDefaultLabel="Tier"
+                            />
+                        </div>
+                    </Focusable>
+                </PanelSectionRow>
+
+                <PanelSectionRow>
+                    <SliderField
+                        label="Take-a-break max / work phase"
+                        description={`${settings.focus_take_a_break_max_per_session ?? 1}`}
+                        value={settings.focus_take_a_break_max_per_session ?? 1}
+                        min={0}
+                        max={5}
+                        step={1}
+                        onChange={(value) => updateSetting('focus_take_a_break_max_per_session', value)}
+                        icon={<FaCoffee size={16} />}
                     />
                 </PanelSectionRow>
 
@@ -895,6 +929,16 @@ export const SettingsPage = () => {
             title: "Focus",
             icon: <FaBrain size={16} />,
             content: <FocusSettingsPage />
+        },
+        {
+            title: "Game Limits",
+            icon: <FaGamepad size={16} />,
+            content: <GameLimitsSettingsPage />
+        },
+        {
+            title: "Parental",
+            icon: <FaShieldAlt size={16} />,
+            content: <ParentalControlsSettingsPage />
         },
         {
             title: "Overlay",

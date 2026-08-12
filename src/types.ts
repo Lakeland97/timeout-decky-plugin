@@ -12,6 +12,7 @@ export interface FocusState {
     is_break: boolean;
     current_session: number;
     current_cycle?: number;
+    tier?: FocusTier;
     end_time: number | null;
     duration: number;
     remaining?: number;
@@ -57,6 +58,9 @@ export interface UserSettings {
     focus_break_duration: number;
     focus_long_break_duration: number;
     focus_sessions_until_long_break: number;
+    focus_default_tier: FocusTier;  // soft | medium | hard
+    focus_take_a_break_max_per_session: number;
+    parental_controls: ParentalControls;
     focus_daily_goal_enabled: boolean;
     focus_daily_goal: number;  // hours per day goal
     // Missed Alerts Global Settings
@@ -137,3 +141,100 @@ export interface OverlayAlert {
 
 // Tab types
 export type TabId = 'focus' | 'settings';
+
+// ==================== Game Limits (sub-project B) ====================
+
+export type GameLimitsMode = 'whitelist' | 'blacklist';
+
+export interface GameLimitsGlobal {
+    opens_enabled: boolean;
+    opens_per_day: number;
+    opens_bypass_curfew: boolean;
+    time_enabled: boolean;
+    time_cap_minutes: number;
+    half_open_cap_minutes: number;
+    curfew_enabled: boolean;
+    curfew_start: string;   // "HH:MM" 24h
+    curfew_end: string;     // "HH:MM" 24h
+    curfew_days: string[];  // weekday names
+    cooldown_enabled: boolean;
+    cooldown_minutes: number;
+    grace_seconds: number;
+    five_min_finish_minutes: number;
+    warn_thresholds_minutes: number[];
+}
+
+export type GameLimitsOverride = Partial<GameLimitsGlobal>;
+
+export interface GameLimitsConfig {
+    enabled: boolean;
+    mode: GameLimitsMode;
+    global: GameLimitsGlobal;
+    per_game: Record<string, GameLimitsOverride>;
+}
+
+export interface GameLimitsStateEntry {
+    credits_remaining: number;       // doubled int (full=2, half=1)
+    time_consumed_today_sec: number;
+    session_start: number | null;
+    session_cap_end: number | null;
+    is_half_open: boolean;
+    cooldown_until: number | null;
+    five_min_finish_used: boolean;
+    in_grace: boolean;
+    grace_until: number | null;
+    time_limit_disabled_at: number | null;
+    time_limit_disabled_cap_sec: number | null;
+    last_reset_date: string;
+}
+
+export type GameLimitsState = Record<string, GameLimitsStateEntry>;
+
+export type GameLaunchMode = 'full' | 'half';
+
+export interface GameLaunchDecision {
+    limited: boolean;
+    blocked?: 'cooldown' | 'curfew' | 'no_credits';
+    mode?: 'choose';
+    appid?: string;
+    app_name?: string;
+}
+
+export interface GameSessionStartedEvent {
+    appid: string;
+    app_name?: string;
+    mode: GameLaunchMode;
+    cap_end: number | null;
+}
+
+export interface GameSessionStoppedEvent {
+    appid: string;
+    reason: 'manual' | 'terminated' | 'cap' | 'curfew';
+}
+
+export interface GameWarningEvent {
+    appid: string;
+    reason: 'time_warn' | 'curfew' | 'time' | 'opens';
+    grace_remaining?: number;
+}
+
+// ==================== Focus tiers (sub-project C) ====================
+
+export type FocusTier = 'soft' | 'medium' | 'hard';
+
+// ==================== Take-a-break (Focus, post-strip) ====================
+
+export type AdhocBreakMinutes = 1 | 2 | 3 | 5 | 7 | 10;
+
+// ==================== Parental controls (sub-project D) ====================
+
+export type ParentalMode = 'self' | 'admin';
+
+export type ParentalLockedFeature = 'game_limits' | 'focus_tier' | 'take_a_break';
+
+export interface ParentalControls {
+    enabled: boolean;
+    passcode: string;   // plaintext STUB — not real auth; revisit before release
+    mode: ParentalMode;
+    locked_features: ParentalLockedFeature[];
+}

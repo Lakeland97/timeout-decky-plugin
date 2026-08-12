@@ -5,6 +5,8 @@ from settings import SettingsManager
 from datetime import datetime, timedelta
 import time
 import os
+import signal
+import re
 import decky 
 import asyncio
 import uuid
@@ -23,6 +25,7 @@ settings.read()
 # Settings keys
 SETTINGS_KEY_SETTINGS = "user_settings"
 SETTINGS_KEY_FOCUS = "focus_state"
+SETTINGS_KEY_GAME_LIMITS = "game_limits_state"
 
 # Limits to prevent excessive data
 
@@ -59,11 +62,49 @@ DEFAULT_SETTINGS = {
     "overlay_show_prevent_sleep_badge": True,
     "overlay_show_missed_badge": True,
     # Tab Order
-    "tab_order": ["focus"]
+    "tab_order": ["focus"],
+    # Game Limits (sub-project B) — disabled by default
+    "game_limits_config": {
+        "enabled": False,
+        "mode": "blacklist",  # "whitelist" | "blacklist"
+        "global": {
+            "opens_enabled": False,
+            "opens_per_day": 3,
+            "opens_bypass_curfew": False,
+            "time_enabled": False,
+            "time_cap_minutes": 20,
+            "half_open_cap_minutes": 10,
+            "curfew_enabled": False,
+            "curfew_start": "00:00",
+            "curfew_end": "05:00",
+            "curfew_days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+            "cooldown_enabled": False,
+            "cooldown_minutes": 0,
+            "grace_seconds": 60,
+            "five_min_finish_minutes": 5,
+            "warn_thresholds_minutes": [5, 1]
+        },
+        "per_game": {}
+    },
+    # Focus enforcement tiers (sub-project C)
+    "focus_default_tier": "soft",  # "soft" | "medium" | "hard"
+    "focus_take_a_break_max_per_session": 1,
+    # Parental controls (sub-project D) — stub, NOT real auth
+    "parental_controls": {
+        "enabled": False,
+        "passcode": "",  # plaintext STUB — NOT real auth; revisit before any release
+        "mode": "self",  # "self" (locked) | "admin" (unlocked)
+        "locked_features": ["game_limits", "focus_tier", "take_a_break"]
+    },
+    # Game Limits streak (v1: local to game-limits; unify with Focus later)
+    "game_limits_current_streak": 0,
+    "game_limits_longest_streak": 0,
+    "game_limits_last_streak_date": ""
 }
 
 class Plugin:
     focus_task = None
+    game_limits_task = None
     suspend_monitor_task = None
     _game_running: bool = False  # Track game state from frontend
     loop = None
@@ -628,19 +669,21 @@ class Plugin:
 
     # ==================== FOCUS METHODS ====================
 
-    async def start_focus_session(self) -> dict:
-        """Start a new Focus session."""
+    async def start_focus_session(self, tier: str = None) -> dict:
+        """Start a new Focus session. tier overrides focus_default_tier (soft|medium|hard)."""
         user_settings = await self._get_user_settings()
         work_duration = user_settings.get("focus_work_duration", 25) * 60
         
         focus_state = await self._get_focus_state()
         session = focus_state.get("current_session", 0) + 1
+        tier_val = tier if tier in ("soft", "medium", "hard") else user_settings.get("focus_default_tier", "soft")
         
         state = {
             "active": True,
             "is_break": False,
             "current_session": session,
             "current_cycle": 1,
+            "tier": tier_val,
             "start_time": time.time(),
             "end_time": time.time() + work_duration,
             "duration": work_duration
@@ -705,6 +748,21 @@ class Plugin:
         await self._update_sleep_inhibitor()
         return True
 
+    async def set_focus_tier(self, tier: str) -> dict:
+        """Change the enforcement tier of the active session (on-demand focus)."""
+        if await self._parental_locked("focus_tier"):
+            return {"error": "parental_locked"}
+        if tier not in ("soft", "medium", "hard"):
+            return {"error": "invalid_tier"}
+        state = await self._get_focus_state()
+        if not state.get("active"):
+            return {"error": "not_active"}
+        state["tier"] = tier
+        await self._save_focus_state(state)
+        state["stats"] = await self._get_focus_stats()
+        await decky.emit("timeout_focus_phase_changed", state)
+        return state
+
     async def skip_focus_phase(self) -> dict:
         """Skip the current work/break phase."""
         focus_state = await self._get_focus_state()
@@ -751,6 +809,7 @@ class Plugin:
                 "is_break": False,
                 "current_session": new_session,
                 "current_cycle": new_cycle,
+                "tier": focus_state.get("tier", "soft"),
                 "start_time": time.time(),
                 "end_time": time.time() + work_duration,
                 "duration": work_duration
@@ -770,6 +829,7 @@ class Plugin:
                 "is_break": True,
                 "current_session": session,
                 "current_cycle": cycle,
+                "tier": focus_state.get("tier", "soft"),
                 "start_time": time.time(),
                 "end_time": time.time() + break_duration,
                 "duration": break_duration,
@@ -786,6 +846,49 @@ class Plugin:
         # Inject stats for frontend
         state["stats"] = await self._get_focus_stats()
         
+        await decky.emit("timeout_focus_phase_changed", state)
+        return state
+
+    async def start_adhoc_break(self, duration_min: int) -> dict:
+        """Take-a-break: end the current work phase and start a custom-duration
+        short break. Friction-capped (focus_take_a_break_max_per_session).
+        Does NOT break the streak."""
+        if await self._parental_locked("take_a_break"):
+            return {"error": "parental_locked"}
+        focus = await self._get_focus_state()
+        if not focus.get("active"):
+            return {"error": "not_active"}
+        us = await self._get_user_settings()
+        max_per_session = us.get("focus_take_a_break_max_per_session", 1)
+        used = focus.get("adhoc_breaks_used", 0)
+        if used >= max_per_session:
+            return {"error": "max_reached"}
+        # credit partial work-phase time before switching
+        try:
+            if focus.get("start_time") and not focus.get("is_break"):
+                elapsed = time.time() - focus.get("start_time")
+                await self._update_focus_stats(is_break=False, duration=elapsed,
+                                               completed_session=False, completed_cycle=False)
+        except Exception as e:
+            decky.logger.error(f"Timeout: adhoc break stats error: {e}")
+        break_dur = max(1, int(duration_min)) * 60
+        state = {
+            "active": True,
+            "is_break": True,
+            "current_session": focus.get("current_session", 1),
+            "current_cycle": focus.get("current_cycle", 1),
+            "tier": focus.get("tier", "soft"),
+            "start_time": time.time(),
+            "end_time": time.time() + break_dur,
+            "duration": break_dur,
+            "break_type": "short",
+            "adhoc_breaks_used": used + 1,
+        }
+        await self._save_focus_state(state)
+        if self.focus_task:
+            self.focus_task.cancel()
+        self.focus_task = self.loop.create_task(self._focus_handler())
+        state["stats"] = await self._get_focus_stats()
         await decky.emit("timeout_focus_phase_changed", state)
         return state
 
@@ -1014,6 +1117,7 @@ class Plugin:
                             "is_break": False,
                             "current_session": new_session,
                             "current_cycle": new_cycle,
+                            "tier": state.get("tier", "soft"),
                             "start_time": time.time(),
                             "end_time": time.time() + work_duration,
                             "duration": work_duration,
@@ -1037,6 +1141,7 @@ class Plugin:
                             "is_break": True,
                             "current_session": session,
                             "current_cycle": cycle,
+                            "tier": state.get("tier", "soft"),
                             "start_time": time.time(),
                             "end_time": time.time() + break_duration,
                             "duration": break_duration,
@@ -1077,6 +1182,427 @@ class Plugin:
         await self.settings_setSetting(SETTINGS_KEY_FOCUS, state)
         await self.settings_commit()
 
+    # ==================== GAME LIMITS METHODS (sub-project B) ====================
+
+    async def _get_game_limits_state(self) -> dict:
+        return await self.settings_getSetting(SETTINGS_KEY_GAME_LIMITS, {})
+
+    async def _save_game_limits_state(self, state: dict):
+        await self.settings_setSetting(SETTINGS_KEY_GAME_LIMITS, state)
+        await self.settings_commit()
+
+    async def _get_game_limits_config(self) -> dict:
+        us = await self._get_user_settings()
+        cfg = us.get("game_limits_config", DEFAULT_SETTINGS["game_limits_config"])
+        cfg = json.loads(json.dumps(cfg))  # deep copy
+        cfg["global"] = {**DEFAULT_SETTINGS["game_limits_config"]["global"], **cfg.get("global", {})}
+        cfg.setdefault("per_game", {})
+        return cfg
+
+    async def get_game_limits_config(self) -> dict:
+        return await self._get_game_limits_config()
+
+    async def update_game_limits_config(self, partial: dict) -> dict:
+        if await self._parental_locked("game_limits"):
+            return {"error": "parental_locked"}
+        us = await self._get_user_settings()
+        cfg = us.get("game_limits_config", DEFAULT_SETTINGS["game_limits_config"])
+        cfg = json.loads(json.dumps(cfg))
+        # streak-asymmetry: disabling opens breaks the streak immediately
+        if "global" in partial:
+            prev = cfg.get("global", {})
+            if partial["global"].get("opens_enabled") is False and prev.get("opens_enabled") is True:
+                await self._break_game_limits_streak()
+        if "enabled" in partial:
+            cfg["enabled"] = bool(partial["enabled"])
+        if "mode" in partial:
+            cfg["mode"] = partial["mode"]
+        if "global" in partial:
+            cfg["global"] = {**cfg.get("global", {}), **partial["global"]}
+        if "per_game" in partial:
+            cfg["per_game"] = partial["per_game"]
+        us["game_limits_config"] = cfg
+        await self.settings_setSetting(SETTINGS_KEY_SETTINGS, us)
+        await self.settings_commit()
+        await decky.emit("timeout_settings_updated", us)
+        return cfg
+
+    async def get_game_limits_state(self) -> dict:
+        return await self._get_game_limits_state()
+
+    def _effective_rule(self, cfg: dict, appid: str) -> dict:
+        base = dict(cfg["global"])
+        override = cfg.get("per_game", {}).get(appid, {})
+        base.update({k: v for k, v in override.items() if v is not None})
+        return base
+
+    def _is_limited(self, appid: str, cfg: dict) -> bool:
+        mode = cfg.get("mode", "blacklist")
+        per_game = cfg.get("per_game", {})
+        if mode == "whitelist":
+            return appid in per_game
+        return appid not in per_game  # blacklist: listed apps are exempt
+
+    @staticmethod
+    def _parse_hhmm(s: str) -> int:
+        try:
+            h, m = str(s).split(":")
+            return int(h) * 60 + int(m)
+        except Exception:
+            return 0
+
+    def _now_in_curfew(self, rule: dict) -> bool:
+        days = rule.get("curfew_days", [])
+        if days and datetime.now().strftime("%a") not in days:
+            return False
+        start = self._parse_hhmm(rule.get("curfew_start", "00:00"))
+        end = self._parse_hhmm(rule.get("curfew_end", "05:00"))
+        now_min = datetime.now().hour * 60 + datetime.now().minute
+        if start == end:
+            return False
+        if start < end:
+            return start <= now_min < end
+        return now_min >= start or now_min < end  # wraps midnight
+
+    def _new_state_entry(self, rule: dict) -> dict:
+        credits = 2 * rule.get("opens_per_day", 3) if rule.get("opens_enabled") else 0
+        return {
+            "credits_remaining": credits,
+            "time_consumed_today_sec": 0,
+            "session_start": None,
+            "session_cap_end": None,
+            "is_half_open": False,
+            "cooldown_until": None,
+            "five_min_finish_used": False,
+            "five_min_offered": False,
+            "in_grace": False,
+            "grace_until": None,
+            "killed": False,
+            "adherent_today": False,
+            "last_reset_date": datetime.now().strftime("%Y-%m-%d"),
+        }
+
+    def _maybe_reset_daily(self, entry: dict, rule: dict) -> dict:
+        today = datetime.now().strftime("%Y-%m-%d")
+        if entry.get("last_reset_date") != today:
+            entry["credits_remaining"] = 2 * rule.get("opens_per_day", 3) if rule.get("opens_enabled") else 0
+            entry["time_consumed_today_sec"] = 0
+            entry["five_min_finish_used"] = False
+            entry["five_min_offered"] = False
+            entry["adherent_today"] = False
+            entry["killed"] = False
+            entry["last_reset_date"] = today
+        return entry
+
+    async def _daily_rollover_check(self):
+        """Lazily roll the game-limits streak once per day (called from tick + report)."""
+        us = await self._get_user_settings()
+        today = datetime.now().strftime("%Y-%m-%d")
+        if us.get("game_limits_last_streak_date") == today:
+            return
+        state = await self._get_game_limits_state()
+        any_adherent = any(e.get("adherent_today") for e in state.values())
+        cur = us.get("game_limits_current_streak", 0)
+        cur = cur + 1 if any_adherent else 0
+        us["game_limits_current_streak"] = cur
+        if cur > us.get("game_limits_longest_streak", 0):
+            us["game_limits_longest_streak"] = cur
+        us["game_limits_last_streak_date"] = today
+        await self.settings_setSetting(SETTINGS_KEY_SETTINGS, us)
+        await self.settings_commit()
+        await decky.emit("timeout_game_streak", {"current": cur, "longest": us["game_limits_longest_streak"]})
+
+    async def _break_game_limits_streak(self):
+        us = await self._get_user_settings()
+        us["game_limits_current_streak"] = 0
+        await self.settings_setSetting(SETTINGS_KEY_SETTINGS, us)
+        await self.settings_commit()
+        await decky.emit("timeout_game_streak", {"current": 0, "longest": us.get("game_limits_longest_streak", 0)})
+
+    async def reset_game_limits_streak(self) -> bool:
+        us = await self._get_user_settings()
+        us["game_limits_current_streak"] = 0
+        us["game_limits_longest_streak"] = 0
+        us["game_limits_last_streak_date"] = ""
+        await self.settings_setSetting(SETTINGS_KEY_SETTINGS, us)
+        await self.settings_commit()
+        await decky.emit("timeout_game_streak", {"current": 0, "longest": 0})
+        return True
+
+    def _scan_reaper_pids(self, appid: str) -> list:
+        """Find Steam reaper PIDs for appid by scanning /proc/*/cmdline.
+        Pattern (Lutris-sourced): 'reaper SteamLaunch AppId=<appid>'."""
+        prefix = f"SteamLaunch AppId={appid}"
+        pids = []
+        try:
+            entries = os.listdir("/proc")
+        except OSError:
+            return pids
+        for pid_str in entries:
+            if not pid_str.isdigit():
+                continue
+            try:
+                with open(f"/proc/{pid_str}/cmdline", "rb") as f:
+                    cmdline = f.read().replace(b"\x00", b" ").decode("utf-8", "replace")
+            except OSError:
+                continue
+            if "reaper" not in cmdline:
+                continue
+            idx = cmdline.find(prefix)
+            if idx == -1:
+                continue
+            after = cmdline[idx + len(prefix): idx + len(prefix) + 1]
+            if after in ("", " "):
+                pids.append(int(pid_str))
+        return pids
+
+    async def _terminate_game(self, appid: str) -> bool:
+        pids = self._scan_reaper_pids(appid)
+        if not pids:
+            decky.logger.warning(f"Timeout: reaper not found for appid={appid}; cannot terminate")
+            return False
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError as e:
+                decky.logger.error(f"Timeout: SIGKILL pid={pid} failed: {e}")
+        decky.logger.info(f"Timeout: SIGKILLed reaper pids {pids} for appid={appid}")
+        return True
+
+    async def report_game_session_started(self, app_id: str, app_name: str = "") -> dict:
+        """Frontend game-start hook. Returns a launch decision."""
+        await self._daily_rollover_check()
+        # Focus enforcement tier (sub-project C) - checked before game limits.
+        focus = await self._get_focus_state()
+        if focus.get("active") and not focus.get("is_break", False):
+            ftier = focus.get("tier", "soft")
+            if ftier == "hard":
+                # Hard focus: terminate the game immediately.
+                ok = await self._terminate_game(app_id)
+                if ok:
+                    await decky.emit("timeout_game_terminated", {"appid": app_id, "reason": "focus_hard"})
+                else:
+                    await decky.emit("timeout_game_terminate_failed", {"appid": app_id, "reason": "focus_hard"})
+                return {"limited": True, "blocked": "focus_hard", "appid": app_id, "app_name": app_name}
+            if ftier == "medium":
+                # Medium focus: warn but allow the launch.
+                await decky.emit("timeout_game_warning", {"appid": app_id, "reason": "focus_medium", "message": "Focus session active"})
+            # soft: silent
+        cfg = await self._get_game_limits_config()
+        if not cfg.get("enabled") or not self._is_limited(app_id, cfg):
+            return {"limited": False}
+        rule = self._effective_rule(cfg, app_id)
+        state = await self._get_game_limits_state()
+        entry = state.get(app_id)
+        entry = self._new_state_entry(rule) if entry is None else self._maybe_reset_daily(entry, rule)
+        entry["app_name"] = app_name
+        now = time.time()
+        if rule.get("cooldown_enabled") and entry.get("cooldown_until") and now < entry["cooldown_until"]:
+            state[app_id] = entry; await self._save_game_limits_state(state)
+            return {"limited": True, "blocked": "cooldown", "appid": app_id, "app_name": app_name}
+        if rule.get("curfew_enabled") and self._now_in_curfew(rule) and not (rule.get("opens_enabled") and rule.get("opens_bypass_curfew")):
+            state[app_id] = entry; await self._save_game_limits_state(state)
+            return {"limited": True, "blocked": "curfew", "appid": app_id, "app_name": app_name}
+        if rule.get("opens_enabled") and entry.get("credits_remaining", 0) < 1:
+            state[app_id] = entry; await self._save_game_limits_state(state)
+            return {"limited": True, "blocked": "no_credits", "appid": app_id, "app_name": app_name}
+        state[app_id] = entry; await self._save_game_limits_state(state)
+        return {"limited": True, "mode": "choose", "appid": app_id, "app_name": app_name}
+
+    async def choose_launch(self, app_id: str, choice: str) -> dict:
+        cfg = await self._get_game_limits_config()
+        rule = self._effective_rule(cfg, app_id)
+        state = await self._get_game_limits_state()
+        entry = state.get(app_id)
+        entry = self._new_state_entry(rule) if entry is None else self._maybe_reset_daily(entry, rule)
+        now = time.time()
+        is_half = (choice == "half")
+        if rule.get("opens_enabled"):
+            spend = 1 if is_half else 2
+            if entry.get("credits_remaining", 0) < spend:
+                return {"error": "no_credits"}
+            entry["credits_remaining"] = entry.get("credits_remaining", 0) - spend
+            await decky.emit("timeout_game_credits_changed", {"appid": app_id, "credits_remaining": entry["credits_remaining"]})
+        entry["is_half_open"] = is_half
+        entry["session_start"] = now
+        entry["in_grace"] = False
+        entry["grace_until"] = None
+        entry["killed"] = False
+        entry["five_min_offered"] = False
+        # clear prior threshold-warning markers
+        for k in [k for k in list(entry.keys()) if str(k).startswith("warned_")]:
+            del entry[k]
+        cap_minutes = rule.get("half_open_cap_minutes") if is_half else rule.get("time_cap_minutes")
+        if rule.get("time_enabled") and not rule.get("opens_enabled") and cap_minutes:
+            entry["session_cap_end"] = now + cap_minutes * 60
+        else:
+            entry["session_cap_end"] = None
+        state[app_id] = entry
+        await self._save_game_limits_state(state)
+        payload = {"appid": app_id, "app_name": entry.get("app_name", ""), "mode": "half" if is_half else "full", "cap_end": entry["session_cap_end"]}
+        await decky.emit("timeout_game_session_started", payload)
+        if not self.game_limits_task or self.game_limits_task.done():
+            self.game_limits_task = self.loop.create_task(self._game_limits_handler())
+        return payload
+
+    async def report_game_session_stopped(self, app_id: str) -> bool:
+        state = await self._get_game_limits_state()
+        entry = state.get(app_id)
+        if not entry or not entry.get("session_start"):
+            return True
+        now = time.time()
+        elapsed = now - entry.get("session_start", now)
+        entry["time_consumed_today_sec"] = entry.get("time_consumed_today_sec", 0) + max(0, elapsed)
+        was_killed = bool(entry.get("killed"))
+        cfg = await self._get_game_limits_config()
+        rule = self._effective_rule(cfg, app_id)
+        if rule.get("cooldown_enabled") and rule.get("cooldown_minutes"):
+            entry["cooldown_until"] = now + rule["cooldown_minutes"] * 60
+        if not was_killed:
+            entry["adherent_today"] = True
+        entry["session_start"] = None
+        entry["session_cap_end"] = None
+        entry["in_grace"] = False
+        entry["grace_until"] = None
+        entry["is_half_open"] = False
+        entry["killed"] = False
+        state[app_id] = entry
+        await self._save_game_limits_state(state)
+        await decky.emit("timeout_game_session_stopped", {"appid": app_id, "reason": "terminated" if was_killed else "manual"})
+        return True
+
+    async def use_five_min_finish(self, app_id: str) -> bool:
+        state = await self._get_game_limits_state()
+        entry = state.get(app_id)
+        if not entry or not entry.get("in_grace") or entry.get("five_min_finish_used"):
+            return False
+        cfg = await self._get_game_limits_config()
+        rule = self._effective_rule(cfg, app_id)
+        mins = rule.get("five_min_finish_minutes", 5)
+        entry["five_min_finish_used"] = True
+        entry["grace_until"] = time.time() + mins * 60
+        state[app_id] = entry
+        await self._save_game_limits_state(state)
+        await decky.emit("timeout_game_warning", {"appid": app_id, "reason": "time_warn", "grace_remaining": mins * 60})
+        return True
+
+    async def _trip(self, appid: str, entry: dict, rule: dict, reason: str) -> bool:
+        """Enter/escalate grace; SIGKILL on grace expiry. Returns True if state mutated."""
+        now = time.time()
+        if not entry.get("in_grace"):
+            entry["in_grace"] = True
+            grace = rule.get("grace_seconds", 60)
+            entry["grace_until"] = now + grace
+            await decky.emit("timeout_game_warning", {"appid": appid, "reason": reason, "grace_remaining": grace})
+            return True
+        if now >= entry.get("grace_until", 0):
+            if not entry.get("five_min_finish_used") and not entry.get("five_min_offered"):
+                entry["five_min_offered"] = True
+                entry["grace_until"] = now + 30  # 30s to accept the finish
+                await decky.emit("timeout_game_five_min_available", {"appid": appid})
+                return True
+            killed = await self._terminate_game(appid)
+            entry["killed"] = True
+            entry["session_start"] = None
+            entry["session_cap_end"] = None
+            entry["in_grace"] = False
+            entry["grace_until"] = None
+            if killed:
+                await self._break_game_limits_streak()
+                await decky.emit("timeout_game_terminated", {"appid": appid, "reason": reason})
+            else:
+                await decky.emit("timeout_game_terminate_failed", {"appid": appid})
+            return True
+        return False
+
+    async def _game_limits_handler(self):
+        """Background task: enforce opens/time/curfew per running limited AppID."""
+        try:
+            while True:
+                cfg = await self._get_game_limits_config()
+                state = await self._get_game_limits_state()
+                dirty = False
+                any_active = False
+                for appid, entry in list(state.items()):
+                    if not entry.get("session_start"):
+                        continue
+                    any_active = True
+                    rule = self._effective_rule(cfg, appid)
+                    opens_present = rule.get("opens_enabled", False)
+                    time_present = rule.get("time_enabled", False) and not opens_present
+                    curfew_present = rule.get("curfew_enabled", False)
+                    curfew_trips = curfew_present and self._now_in_curfew(rule) and not (opens_present and rule.get("opens_bypass_curfew"))
+                    if curfew_trips:
+                        if await self._trip(appid, entry, rule, "curfew"):
+                            dirty = True
+                        continue
+                    if time_present and entry.get("session_cap_end"):
+                        remaining = entry["session_cap_end"] - time.time()
+                        if remaining <= 0:
+                            if await self._trip(appid, entry, rule, "time"):
+                                dirty = True
+                            continue
+                        for thr in rule.get("warn_thresholds_minutes", [5, 1]):
+                            marker = f"warned_{thr}"
+                            if remaining <= thr * 60 and not entry.get(marker):
+                                entry[marker] = True
+                                dirty = True
+                                await decky.emit("timeout_game_warning", {"appid": appid, "reason": "time_warn", "grace_remaining": int(max(0, remaining))})
+                if dirty:
+                    await self._save_game_limits_state(state)
+                if not any_active:
+                    return  # nothing running; task restarts on next choose_launch
+                await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            decky.logger.info("Timeout: Game Limits handler stopped")
+
+    async def get_installed_games(self) -> list:
+        """Return installed Steam games [{appid, name}] by scraping appmanifest_*.acf.
+        Dependency-free regex parse (StateFlags 4 = fully installed). Best-effort."""
+        games = []
+        home = os.path.expanduser("~")
+        steam_roots = [os.path.join(home, ".steam", "steam"), os.path.join(home, ".local", "share", "Steam")]
+        libs = []
+        for root in steam_roots:
+            lf = os.path.join(root, "steamapps", "libraryfolders.vdf")
+            if os.path.exists(lf):
+                try:
+                    with open(lf, "r") as f:
+                        libs.extend(re.findall(r'"path"\s+"([^"]+)"', f.read()))
+                except OSError:
+                    pass
+            libs.append(root)
+        seen = set()
+        for lib in libs:
+            sap = os.path.join(lib, "steamapps")
+            if not os.path.isdir(sap):
+                continue
+            try:
+                manifests = os.listdir(sap)
+            except OSError:
+                continue
+            for mf in manifests:
+                if not (mf.startswith("appmanifest_") and mf.endswith(".acf")):
+                    continue
+                try:
+                    with open(os.path.join(sap, mf), "r") as f:
+                        txt = f.read()
+                except OSError:
+                    continue
+                aid = re.search(r'"appid"\s+"(\d+)"', txt)
+                nm = re.search(r'"name"\s+"([^"]*)"', txt)
+                flags = re.search(r'"StateFlags"\s+"(\d+)"', txt)
+                if not aid or not nm:
+                    continue
+                if flags and flags.group(1) != "4":
+                    continue
+                key = aid.group(1)
+                if key in seen:
+                    continue
+                seen.add(key)
+                games.append({"appid": key, "name": nm.group(1)})
+        return games
+
     # ==================== SETTINGS METHODS ====================
 
     async def get_version(self) -> str:
@@ -1115,6 +1641,63 @@ class Plugin:
 
 
 
+
+    # ---------------- Parental controls (sub-project D) ----------------
+    # NOTE: passcode is a plaintext STUB — not real authentication. Revisit before release.
+
+    async def _parental_locked(self, feature: str) -> bool:
+        pc = (await self._get_user_settings()).get("parental_controls", {})
+        if not pc.get("enabled") or pc.get("mode") != "self":
+            return False
+        return feature in pc.get("locked_features", ["game_limits", "focus_tier", "take_a_break"])
+
+    async def get_parental_controls(self) -> dict:
+        return (await self._get_user_settings()).get("parental_controls", DEFAULT_SETTINGS["parental_controls"])
+
+    async def update_parental_controls(self, partial: dict) -> dict:
+        # Gated: once enabled in self mode, you must unlock (admin) to change it.
+        us = await self._get_user_settings()
+        pc = json.loads(json.dumps(us.get("parental_controls", DEFAULT_SETTINGS["parental_controls"])))
+        if pc.get("enabled") and pc.get("mode") == "self":
+            return {"error": "parental_locked"}
+        if "enabled" in partial:
+            pc["enabled"] = bool(partial["enabled"])
+        if "passcode" in partial:
+            pc["passcode"] = str(partial["passcode"] or "")
+        if "locked_features" in partial:
+            pc["locked_features"] = list(partial["locked_features"])
+        if "mode" in partial:
+            pc["mode"] = partial["mode"]
+        us["parental_controls"] = pc
+        await self.settings_setSetting(SETTINGS_KEY_SETTINGS, us)
+        await self.settings_commit()
+        await decky.emit("timeout_settings_updated", us)
+        return pc
+
+    async def verify_parental_passcode(self, code: str) -> dict:
+        us = await self._get_user_settings()
+        pc = us.get("parental_controls", DEFAULT_SETTINGS["parental_controls"])
+        if not pc.get("enabled"):
+            return {"ok": True, "controls": pc}
+        if pc.get("passcode") and str(code) == str(pc.get("passcode")):
+            pc2 = json.loads(json.dumps(pc))
+            pc2["mode"] = "admin"
+            us["parental_controls"] = pc2
+            await self.settings_setSetting(SETTINGS_KEY_SETTINGS, us)
+            await self.settings_commit()
+            await decky.emit("timeout_settings_updated", us)
+            return {"ok": True, "controls": pc2}
+        return {"ok": False}
+
+    async def lock_parental(self) -> bool:
+        us = await self._get_user_settings()
+        pc = json.loads(json.dumps(us.get("parental_controls", DEFAULT_SETTINGS["parental_controls"])))
+        pc["mode"] = "self"
+        us["parental_controls"] = pc
+        await self.settings_setSetting(SETTINGS_KEY_SETTINGS, us)
+        await self.settings_commit()
+        await decky.emit("timeout_settings_updated", us)
+        return True
 
     async def get_overlay_data(self) -> dict:
         """Get aggregated data for the in-game overlay.
@@ -1436,6 +2019,14 @@ class Plugin:
                 changed = True
                 decky.logger.info("Timeout: Renamed pomodoro_state blob → focus_state")
 
+
+        # --- skeleton: seed new feature keys idempotently (B/C/D) ---
+        for _new_key in ("game_limits_config", "focus_default_tier",
+                          "focus_take_a_break_max_per_session", "parental_controls"):
+            if _new_key not in updated:
+                updated[_new_key] = DEFAULT_SETTINGS[_new_key]
+                changed = True
+
         if changed:
             await self.settings_setSetting(SETTINGS_KEY_SETTINGS, updated)
             await self.settings_commit()
@@ -1602,6 +2193,12 @@ class Plugin:
                 self.focus_task = self.loop.create_task(self._focus_handler())
         
         
+        # Resume Game Limits enforcement if any session is active
+        _gl_state = await self._get_game_limits_state()
+        if any(e.get("session_start") for e in _gl_state.values()):
+            decky.logger.info("Timeout: Resuming Game Limits enforcement")
+            self.game_limits_task = self.loop.create_task(self._game_limits_handler())
+
         # Start suspend monitor
         self.suspend_monitor_task = self.loop.create_task(self._suspend_monitor())
         
@@ -1621,6 +2218,11 @@ class Plugin:
             if self.focus_task:
                 self.focus_task.cancel()
                 self.focus_task = None
+
+            # 3b. Cancel Game Limits task
+            if self.game_limits_task:
+                self.game_limits_task.cancel()
+                self.game_limits_task = None
             
             # 4. Cancel suspend monitor
             if self.suspend_monitor_task:
@@ -1638,6 +2240,7 @@ class Plugin:
                 "end_time": None,
                 "duration": 0
             })
+            await self.settings_setSetting(SETTINGS_KEY_GAME_LIMITS, {})
             await self.settings_setSetting("missed_alerts_items", [])
             
             # 7. Reset Focus stats
@@ -1687,6 +2290,10 @@ class Plugin:
         # Cancel Focus
         if self.focus_task:
             self.focus_task.cancel()
+
+        # Cancel Game Limits
+        if self.game_limits_task:
+            self.game_limits_task.cancel()
         
         # Cancel suspend monitor
         if self.suspend_monitor_task:

@@ -1,5 +1,6 @@
 import {
     ButtonItem,
+    Dropdown,
     Focusable,
     PanelSection,
     PanelSectionRow,
@@ -11,6 +12,9 @@ import { useFocus } from "../hooks/useFocus";
 import { useSettings } from "../hooks/useSettings";
 import { formatDuration } from "../utils/time";
 import { FocusStatsPanel } from "./FocusStatsPanel";
+import { showTakeABreakModal } from "./TakeABreakModal";
+import { useState } from "react";
+import type { FocusTier } from "../types";
 
 
 export function FocusPanel() {
@@ -21,13 +25,16 @@ export function FocusPanel() {
         currentCycle,
         remaining,
         elapsedThisPhase,
+        tier,
         startFocus,
+        setFocusTier,
         stopFocus,
         skipPhase,
         resetStats,
         stats
     } = useFocus();
     const { settings, updateSetting } = useSettings();
+    const [pendingTier, setPendingTier] = useState<FocusTier>('soft');
 
     const workDuration = settings.focus_work_duration * 60;
     const breakDuration = settings.focus_break_duration * 60;
@@ -121,12 +128,36 @@ export function FocusPanel() {
                     </PanelSectionRow>
                 )}
 
+                {/* Focus tier */}
+                <PanelSectionRow>
+                    <Focusable flow-children="row" style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+                        <span style={{ flexShrink: 0, fontSize: 14 }}>🛡️</span>
+                        <span style={{ flexShrink: 0 }}>Tier</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <Dropdown
+                                rgOptions={[
+                                    { data: 'soft', label: 'Soft' },
+                                    { data: 'medium', label: 'Medium — warn' },
+                                    { data: 'hard', label: 'Hard — block games' }
+                                ]}
+                                selectedOption={(isActive ? tier : pendingTier)}
+                                onChange={(o) => {
+                                    const t = o.data as FocusTier;
+                                    if (isActive) setFocusTier(t);
+                                    else setPendingTier(t);
+                                }}
+                                strDefaultLabel="Tier"
+                            />
+                        </div>
+                    </Focusable>
+                </PanelSectionRow>
+
                 {/* Controls */}
                 {!isActive ? (
                     <PanelSectionRow>
                         <ButtonItem
                             layout="below"
-                            onClick={startFocus}
+                            onClick={() => startFocus(pendingTier)}
                         >
                             <FaPlay size={12} style={{ marginRight: 8 }} />
                             Start Focus Session
@@ -137,10 +168,13 @@ export function FocusPanel() {
                         <PanelSectionRow>
                             <ButtonItem
                                 layout="below"
-                                onClick={skipPhase}
+                                onClick={isBreak ? skipPhase : () => showTakeABreakModal()}
                             >
-                                <FaForward size={12} style={{ marginRight: 8 }} />
-                                {isBreak ? "Skip Break → Start Work" : "Skip Work → Take Break"}
+                                {isBreak ? (
+                                    <><FaForward size={12} style={{ marginRight: 8 }} />Skip Break → Start Work</>
+                                ) : (
+                                    <><FaCoffee size={12} style={{ marginRight: 8 }} />Take a Break</>
+                                )}
                             </ButtonItem>
                         </PanelSectionRow>
                         <PanelSectionRow>

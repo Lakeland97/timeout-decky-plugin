@@ -17,6 +17,9 @@ const DEFAULT_SETTINGS: UserSettings = {
     focus_break_duration: 5,
     focus_long_break_duration: 15,
     focus_sessions_until_long_break: 4,
+    focus_default_tier: 'soft',
+    focus_take_a_break_max_per_session: 1,
+    parental_controls: { enabled: false, passcode: '', mode: 'self', locked_features: ['game_limits', 'focus_tier', 'take_a_break'] },
     focus_daily_goal_enabled: false,
     focus_daily_goal: 4,  // 4 hours default
     // Missed Alerts settings
