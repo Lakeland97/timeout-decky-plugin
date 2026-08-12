@@ -20,6 +20,7 @@ import { useSounds } from "../hooks/useSounds";
 import { playAlarmSound } from "../utils/sounds";
 import { showExportModal, showImportModal } from "./BackupModals";
 import { BinarySelector } from "./BinarySelector";
+import { GameLimitsSettingsPage } from "./GameLimitsSettingsPage";
 import type { SoundFile } from "../types";
 
 // Backend callables
@@ -895,6 +896,11 @@ export const SettingsPage = () => {
             title: "Focus",
             icon: <FaBrain size={16} />,
             content: <FocusSettingsPage />
+        },
+        {
+            title: "Game Limits",
+            icon: <FaGamepad size={16} />,
+            content: <GameLimitsSettingsPage />
         },
         {
             title: "Overlay",

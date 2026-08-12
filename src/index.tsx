@@ -29,6 +29,8 @@ import { useSettings } from "./hooks/useSettings";
 import { useSleepInhibitor } from "./hooks/useSleepInhibitor";
 import { useFocus } from "./hooks/useFocus";
 import { useMissedAlerts } from "./hooks/useMissedAlerts";
+import { reportGameStarted, reportGameStopped } from "./hooks/useGameLimits";
+import { showLaunchMenu, showFiveMinFinishPrompt, showGameToast } from "./components/GameLimitsModals";
 import { MODAL_ZINDEX_CSS } from "./utils/zIndex";
 
 // Types
@@ -407,6 +409,24 @@ export default definePlugin(() => {
         });
     });
 
+    // Game Limits event handlers
+    const handleGameWarning = (e: { appid: string; reason: string; grace_remaining?: number }) => {
+        showGameToast("Game Limits", `Warning (${e.reason})${e.grace_remaining ? ` — ${e.grace_remaining}s` : ""}`);
+    };
+    const handleGameFiveMin = (e: { appid: string }) => {
+        showFiveMinFinishPrompt(e.appid);
+    };
+    const handleGameTerminated = (e: { appid: string; reason: string }) => {
+        showGameToast("Game Limits", `${e.appid} terminated (${e.reason})`);
+    };
+    const handleGameTerminateFailed = (e: { appid: string }) => {
+        showGameToast("Game Limits", `Could not terminate ${e.appid} — reaper not found.`);
+    };
+    addEventListener("timeout_game_warning", handleGameWarning);
+    addEventListener("timeout_game_five_min_available", handleGameFiveMin);
+    addEventListener("timeout_game_terminated", handleGameTerminated);
+    addEventListener("timeout_game_terminate_failed", handleGameTerminateFailed);
+
     // Game lifecycle listeners using app lifetime notification
     let unregisterGameListener: any;
 
@@ -424,12 +444,20 @@ export default definePlugin(() => {
                     // Game start
                     runningAppIds.add(appId);
                     setGameRunning(true);
+                    reportGameStarted(appId, "").then((decision) => {
+                        if (decision.limited && decision.mode === "choose") {
+                            showLaunchMenu(decision.appid || appId, decision.app_name || "");
+                        } else if (decision.limited && decision.blocked) {
+                            showGameToast("Game Limits", `${appId} blocked: ${decision.blocked}`);
+                        }
+                    }).catch((e) => console.error("[Timeout] reportGameStarted failed:", e));
                     console.log(`[Timeout] App ${appId} started. Running apps: ${runningAppIds.size}`);
                 } else {
                     // Game end
                     runningAppIds.delete(appId);
                     const isAnyGameRunning = runningAppIds.size > 0;
                     setGameRunning(isAnyGameRunning);
+                    reportGameStopped(appId).catch((e) => console.error("[Timeout] reportGameStopped failed:", e));
                     console.log(`[Timeout] App ${appId} ended. Running apps: ${runningAppIds.size}`);
                 }
             });
@@ -473,6 +501,10 @@ export default definePlugin(() => {
         onDismount: () => {
             removeEventListener('timeout_focus_work_ended', handleFocusWorkEnded);
             removeEventListener('timeout_focus_break_ended', handleFocusBreakEnded);
+            removeEventListener("timeout_game_warning", handleGameWarning);
+            removeEventListener("timeout_game_five_min_available", handleGameFiveMin);
+            removeEventListener("timeout_game_terminated", handleGameTerminated);
+            removeEventListener("timeout_game_terminate_failed", handleGameTerminateFailed);
             // Unregister settings route and overlay
             routerHook.removeRoute(SETTINGS_ROUTE);
             routerHook.removeGlobalComponent(OVERLAY_COMPONENT_NAME);
