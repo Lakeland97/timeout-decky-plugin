@@ -58,6 +58,8 @@ export interface UserSettings {
     focus_break_duration: number;
     focus_long_break_duration: number;
     focus_sessions_until_long_break: number;
+    focus_default_tier: FocusTier;  // soft | medium | hard
+    focus_take_a_break_max_per_session: number;
     focus_daily_goal_enabled: boolean;
     focus_daily_goal: number;  // hours per day goal
     // Missed Alerts Global Settings

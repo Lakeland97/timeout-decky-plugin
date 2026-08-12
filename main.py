@@ -668,19 +668,21 @@ class Plugin:
 
     # ==================== FOCUS METHODS ====================
 
-    async def start_focus_session(self) -> dict:
-        """Start a new Focus session."""
+    async def start_focus_session(self, tier: str = None) -> dict:
+        """Start a new Focus session. tier overrides focus_default_tier (soft|medium|hard)."""
         user_settings = await self._get_user_settings()
         work_duration = user_settings.get("focus_work_duration", 25) * 60
         
         focus_state = await self._get_focus_state()
         session = focus_state.get("current_session", 0) + 1
+        tier_val = tier if tier in ("soft", "medium", "hard") else user_settings.get("focus_default_tier", "soft")
         
         state = {
             "active": True,
             "is_break": False,
             "current_session": session,
             "current_cycle": 1,
+            "tier": tier_val,
             "start_time": time.time(),
             "end_time": time.time() + work_duration,
             "duration": work_duration
@@ -745,6 +747,19 @@ class Plugin:
         await self._update_sleep_inhibitor()
         return True
 
+    async def set_focus_tier(self, tier: str) -> dict:
+        """Change the enforcement tier of the active session (on-demand focus)."""
+        if tier not in ("soft", "medium", "hard"):
+            return {"error": "invalid_tier"}
+        state = await self._get_focus_state()
+        if not state.get("active"):
+            return {"error": "not_active"}
+        state["tier"] = tier
+        await self._save_focus_state(state)
+        state["stats"] = await self._get_focus_stats()
+        await decky.emit("timeout_focus_phase_changed", state)
+        return state
+
     async def skip_focus_phase(self) -> dict:
         """Skip the current work/break phase."""
         focus_state = await self._get_focus_state()
@@ -791,6 +806,7 @@ class Plugin:
                 "is_break": False,
                 "current_session": new_session,
                 "current_cycle": new_cycle,
+                "tier": focus_state.get("tier", "soft"),
                 "start_time": time.time(),
                 "end_time": time.time() + work_duration,
                 "duration": work_duration
@@ -810,6 +826,7 @@ class Plugin:
                 "is_break": True,
                 "current_session": session,
                 "current_cycle": cycle,
+                "tier": focus_state.get("tier", "soft"),
                 "start_time": time.time(),
                 "end_time": time.time() + break_duration,
                 "duration": break_duration,
@@ -855,6 +872,7 @@ class Plugin:
             "is_break": True,
             "current_session": focus.get("current_session", 1),
             "current_cycle": focus.get("current_cycle", 1),
+            "tier": focus.get("tier", "soft"),
             "start_time": time.time(),
             "end_time": time.time() + break_dur,
             "duration": break_dur,
@@ -1094,6 +1112,7 @@ class Plugin:
                             "is_break": False,
                             "current_session": new_session,
                             "current_cycle": new_cycle,
+                            "tier": state.get("tier", "soft"),
                             "start_time": time.time(),
                             "end_time": time.time() + work_duration,
                             "duration": work_duration,
@@ -1117,6 +1136,7 @@ class Plugin:
                             "is_break": True,
                             "current_session": session,
                             "current_cycle": cycle,
+                            "tier": state.get("tier", "soft"),
                             "start_time": time.time(),
                             "end_time": time.time() + break_duration,
                             "duration": break_duration,
@@ -1345,6 +1365,22 @@ class Plugin:
     async def report_game_session_started(self, app_id: str, app_name: str = "") -> dict:
         """Frontend game-start hook. Returns a launch decision."""
         await self._daily_rollover_check()
+        # Focus enforcement tier (sub-project C) - checked before game limits.
+        focus = await self._get_focus_state()
+        if focus.get("active") and not focus.get("is_break", False):
+            ftier = focus.get("tier", "soft")
+            if ftier == "hard":
+                # Hard focus: terminate the game immediately.
+                ok = await self._terminate_game(app_id)
+                if ok:
+                    await decky.emit("timeout_game_terminated", {"appid": app_id, "reason": "focus_hard"})
+                else:
+                    await decky.emit("timeout_game_terminate_failed", {"appid": app_id, "reason": "focus_hard"})
+                return {"limited": True, "blocked": "focus_hard", "appid": app_id, "app_name": app_name}
+            if ftier == "medium":
+                # Medium focus: warn but allow the launch.
+                await decky.emit("timeout_game_warning", {"appid": app_id, "reason": "focus_medium", "message": "Focus session active"})
+            # soft: silent
         cfg = await self._get_game_limits_config()
         if not cfg.get("enabled") or not self._is_limited(app_id, cfg):
             return {"limited": False}

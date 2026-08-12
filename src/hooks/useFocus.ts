@@ -1,14 +1,15 @@
 import { useEffect, useState, useCallback } from 'react';
 import { addEventListener, removeEventListener, callable } from '@decky/api';
-import type { FocusState, FocusTickEvent } from '../types';
+import type { FocusState, FocusTickEvent, FocusTier } from '../types';
 
 // Backend callables
-const startFocusCall = callable<[], FocusState>('start_focus_session');
+const startFocusCall = callable<[tier: string | null], FocusState>('start_focus_session');
 const stopFocusCall = callable<[], boolean>('stop_focus_session');
 const skipPhaseCall = callable<[], FocusState>('skip_focus_phase');
 const getFocusStateCall = callable<[], FocusState>('get_focus_state');
 const resetStatsCall = callable<[], boolean>('reset_focus_stats');
 export const startAdhocBreakCall = callable<[duration_min: number], FocusState | { error: string }>('start_adhoc_break');
+export const setFocusTierCall = callable<[tier: string], FocusState | { error: string }>('set_focus_tier');
 
 export function useFocus() {
     const [state, setState] = useState<FocusState>({
@@ -33,10 +34,10 @@ export function useFocus() {
         }
     }, []);
 
-    // Start Focus
-    const startFocus = useCallback(async () => {
+    // Start Focus (optional tier override)
+    const startFocus = useCallback(async (tier: FocusTier | null = null) => {
         try {
-            const newState = await startFocusCall();
+            const newState = await startFocusCall(tier);
             setState(newState);
         } catch (e) {
             console.error('Failed to start Focus:', e);
@@ -79,6 +80,16 @@ export function useFocus() {
             if (!('error' in newState)) setState(newState);
         } catch (e) {
             console.error('Failed to start ad-hoc break:', e);
+        }
+    }, []);
+
+    // Change enforcement tier mid-session (on-demand focus)
+    const setFocusTier = useCallback(async (tier: string) => {
+        try {
+            const newState = await setFocusTierCall(tier);
+            if (!('error' in newState)) setState(newState);
+        } catch (e) {
+            console.error('Failed to set focus tier:', e);
         }
     }, []);
 
@@ -144,7 +155,9 @@ export function useFocus() {
         currentCycle: state.current_cycle || 1,
         remaining: state.remaining || 0,
         elapsedThisPhase: state.elapsed_this_phase || 0,
+        tier: state.tier || 'soft',
         startFocus,
+        setFocusTier,
         stopFocus,
         skipPhase,
         startAdhocBreak,
