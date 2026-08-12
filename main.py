@@ -829,6 +829,46 @@ class Plugin:
         await decky.emit("timeout_focus_phase_changed", state)
         return state
 
+    async def start_adhoc_break(self, duration_min: int) -> dict:
+        """Take-a-break: end the current work phase and start a custom-duration
+        short break. Friction-capped (focus_take_a_break_max_per_session).
+        Does NOT break the streak."""
+        focus = await self._get_focus_state()
+        if not focus.get("active"):
+            return {"error": "not_active"}
+        us = await self._get_user_settings()
+        max_per_session = us.get("focus_take_a_break_max_per_session", 1)
+        used = focus.get("adhoc_breaks_used", 0)
+        if used >= max_per_session:
+            return {"error": "max_reached"}
+        # credit partial work-phase time before switching
+        try:
+            if focus.get("start_time") and not focus.get("is_break"):
+                elapsed = time.time() - focus.get("start_time")
+                await self._update_focus_stats(is_break=False, duration=elapsed,
+                                               completed_session=False, completed_cycle=False)
+        except Exception as e:
+            decky.logger.error(f"Timeout: adhoc break stats error: {e}")
+        break_dur = max(1, int(duration_min)) * 60
+        state = {
+            "active": True,
+            "is_break": True,
+            "current_session": focus.get("current_session", 1),
+            "current_cycle": focus.get("current_cycle", 1),
+            "start_time": time.time(),
+            "end_time": time.time() + break_dur,
+            "duration": break_dur,
+            "break_type": "short",
+            "adhoc_breaks_used": used + 1,
+        }
+        await self._save_focus_state(state)
+        if self.focus_task:
+            self.focus_task.cancel()
+        self.focus_task = self.loop.create_task(self._focus_handler())
+        state["stats"] = await self._get_focus_stats()
+        await decky.emit("timeout_focus_phase_changed", state)
+        return state
+
     async def _get_focus_stats(self) -> dict:
         """Get stats from user settings, handling daily buffer reset and streak tracking."""
         settings = await self._get_user_settings()

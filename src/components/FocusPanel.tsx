@@ -11,6 +11,7 @@ import { useFocus } from "../hooks/useFocus";
 import { useSettings } from "../hooks/useSettings";
 import { formatDuration } from "../utils/time";
 import { FocusStatsPanel } from "./FocusStatsPanel";
+import { showTakeABreakModal } from "./TakeABreakModal";
 
 
 export function FocusPanel() {
@@ -137,10 +138,13 @@ export function FocusPanel() {
                         <PanelSectionRow>
                             <ButtonItem
                                 layout="below"
-                                onClick={skipPhase}
+                                onClick={isBreak ? skipPhase : () => showTakeABreakModal()}
                             >
-                                <FaForward size={12} style={{ marginRight: 8 }} />
-                                {isBreak ? "Skip Break → Start Work" : "Skip Work → Take Break"}
+                                {isBreak ? (
+                                    <><FaForward size={12} style={{ marginRight: 8 }} />Skip Break → Start Work</>
+                                ) : (
+                                    <><FaCoffee size={12} style={{ marginRight: 8 }} />Take a Break</>
+                                )}
                             </ButtonItem>
                         </PanelSectionRow>
                         <PanelSectionRow>

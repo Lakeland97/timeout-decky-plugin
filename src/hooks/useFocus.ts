@@ -8,6 +8,7 @@ const stopFocusCall = callable<[], boolean>('stop_focus_session');
 const skipPhaseCall = callable<[], FocusState>('skip_focus_phase');
 const getFocusStateCall = callable<[], FocusState>('get_focus_state');
 const resetStatsCall = callable<[], boolean>('reset_focus_stats');
+export const startAdhocBreakCall = callable<[duration_min: number], FocusState | { error: string }>('start_adhoc_break');
 
 export function useFocus() {
     const [state, setState] = useState<FocusState>({
@@ -68,6 +69,16 @@ export function useFocus() {
             setState(newState);
         } catch (e) {
             console.error('Failed to skip phase:', e);
+        }
+    }, []);
+
+    // Take an ad-hoc break (custom duration)
+    const startAdhocBreak = useCallback(async (min: number) => {
+        try {
+            const newState = await startAdhocBreakCall(min);
+            if (!('error' in newState)) setState(newState);
+        } catch (e) {
+            console.error('Failed to start ad-hoc break:', e);
         }
     }, []);
 
@@ -136,6 +147,7 @@ export function useFocus() {
         startFocus,
         stopFocus,
         skipPhase,
+        startAdhocBreak,
         resetStats,
         refresh: loadState
     };
