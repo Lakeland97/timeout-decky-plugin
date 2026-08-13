@@ -162,6 +162,13 @@ export interface GameLimitsGlobal {
     grace_seconds: number;
     five_min_finish_minutes: number;
     warn_thresholds_minutes: number[];
+    // Per-limit active windows: inside the window the limit applies; outside it relaxes.
+    opens_window_enabled: boolean;
+    opens_window_start: string;   // "HH:MM" 24h
+    opens_window_end: string;     // "HH:MM" 24h
+    time_window_enabled: boolean;
+    time_window_start: string;    // "HH:MM" 24h
+    time_window_end: string;      // "HH:MM" 24h
 }
 
 export type GameLimitsOverride = Partial<GameLimitsGlobal>;

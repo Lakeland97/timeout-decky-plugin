@@ -106,6 +106,36 @@ export const GameLimitsSettingsPage = () => {
                                 onChange={(v) => setG({ opens_bypass_curfew: v })}
                             />
                         </PanelSectionRow>
+                        <PanelSectionRow>
+                            <ToggleField
+                                label="Active window (relaxes outside)"
+                                description="Only spend the opens budget during these hours"
+                                checked={g.opens_window_enabled}
+                                onChange={(v) => setG({ opens_window_enabled: v })}
+                            />
+                        </PanelSectionRow>
+                        {g.opens_window_enabled && (
+                            <>
+                                <PanelSectionRow>
+                                    <SliderField
+                                        label="Window starts at"
+                                        description={hourToHHMM(hhmmToHour(g.opens_window_start))}
+                                        value={hhmmToHour(g.opens_window_start)}
+                                        min={0} max={23} step={1}
+                                        onChange={(v) => setG({ opens_window_start: hourToHHMM(v) })}
+                                    />
+                                </PanelSectionRow>
+                                <PanelSectionRow>
+                                    <SliderField
+                                        label="Window ends at"
+                                        description={hourToHHMM(hhmmToHour(g.opens_window_end))}
+                                        value={hhmmToHour(g.opens_window_end)}
+                                        min={0} max={23} step={1}
+                                        onChange={(v) => setG({ opens_window_end: hourToHHMM(v) })}
+                                    />
+                                </PanelSectionRow>
+                            </>
+                        )}
                     </>
                 )}
             </PanelSection>
@@ -115,15 +145,47 @@ export const GameLimitsSettingsPage = () => {
                     <ToggleField label="Limit session length" checked={g.time_enabled} onChange={(v) => setG({ time_enabled: v })} />
                 </PanelSectionRow>
                 {g.time_enabled && (
-                    <PanelSectionRow>
-                        <SliderField
-                            label="Full-session cap"
-                            description={`${g.time_cap_minutes} min (half = ${g.half_open_cap_minutes} min)`}
-                            value={g.time_cap_minutes}
-                            min={5} max={180} step={5}
-                            onChange={(v) => setG({ time_cap_minutes: v, half_open_cap_minutes: Math.max(1, Math.round(v / 2)) })}
-                        />
-                    </PanelSectionRow>
+                    <>
+                        <PanelSectionRow>
+                            <SliderField
+                                label="Full-session cap"
+                                description={`${g.time_cap_minutes} min (half = ${g.half_open_cap_minutes} min)`}
+                                value={g.time_cap_minutes}
+                                min={5} max={180} step={5}
+                                onChange={(v) => setG({ time_cap_minutes: v, half_open_cap_minutes: Math.max(1, Math.round(v / 2)) })}
+                            />
+                        </PanelSectionRow>
+                        <PanelSectionRow>
+                            <ToggleField
+                                label="Active window (relaxes outside)"
+                                description="Only enforce the session cap during these hours"
+                                checked={g.time_window_enabled}
+                                onChange={(v) => setG({ time_window_enabled: v })}
+                            />
+                        </PanelSectionRow>
+                        {g.time_window_enabled && (
+                            <>
+                                <PanelSectionRow>
+                                    <SliderField
+                                        label="Window starts at"
+                                        description={hourToHHMM(hhmmToHour(g.time_window_start))}
+                                        value={hhmmToHour(g.time_window_start)}
+                                        min={0} max={23} step={1}
+                                        onChange={(v) => setG({ time_window_start: hourToHHMM(v) })}
+                                    />
+                                </PanelSectionRow>
+                                <PanelSectionRow>
+                                    <SliderField
+                                        label="Window ends at"
+                                        description={hourToHHMM(hhmmToHour(g.time_window_end))}
+                                        value={hhmmToHour(g.time_window_end)}
+                                        min={0} max={23} step={1}
+                                        onChange={(v) => setG({ time_window_end: hourToHHMM(v) })}
+                                    />
+                                </PanelSectionRow>
+                            </>
+                        )}
+                    </>
                 )}
             </PanelSection>
 
