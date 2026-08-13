@@ -8,7 +8,8 @@ import type { ParentalLockedFeature } from "../types";
 const FEATURES: { key: ParentalLockedFeature; label: string }[] = [
     { key: 'game_limits', label: 'Game Limits settings' },
     { key: 'focus_tier', label: 'Focus tier changes' },
-    { key: 'take_a_break', label: 'Take-a-break' }
+    { key: 'take_a_break', label: 'Take-a-break' },
+    { key: 'mindfulness', label: 'Mindfulness pause' }
 ];
 
 const Wrap = ({ children }: { children: React.ReactNode }) => (

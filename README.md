@@ -34,6 +34,7 @@ Play-time limits, focus modes, and parental controls for Steam Deck.
 - ◐ Half-opens
 - ◐ Cooldowns
 - ◐ Curfew
+- ◐ Per-limit active windows
 - ◐ Concession
 
 ### 🎯 Focus enforcement tiers
@@ -44,6 +45,10 @@ Play-time limits, focus modes, and parental controls for Steam Deck.
 ### 🔒 Parental controls + passcode
 - ◐ Self-control mode
 - ◐ Administrative lockout
+
+### 🧘 Mindfulness pause
+- ◐ Cooldown before distractions
+- ✗ Cooldown on settings changes (WIP)
 
 ### 🔥 Streaks
 - ◐ Game-limits streak

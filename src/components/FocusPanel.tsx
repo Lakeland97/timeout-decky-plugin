@@ -13,6 +13,7 @@ import { useSettings } from "../hooks/useSettings";
 import { formatDuration } from "../utils/time";
 import { FocusStatsPanel } from "./FocusStatsPanel";
 import { showTakeABreakModal } from "./TakeABreakModal";
+import { showMindfulnessPause } from "./MindfulnessPauseModal";
 import { useState } from "react";
 import type { FocusTier } from "../types";
 
@@ -168,7 +169,7 @@ export function FocusPanel() {
                         <PanelSectionRow>
                             <ButtonItem
                                 layout="below"
-                                onClick={isBreak ? skipPhase : () => showTakeABreakModal()}
+                                onClick={isBreak ? skipPhase : () => showMindfulnessPause('focus_skip', () => showTakeABreakModal())}
                             >
                                 {isBreak ? (
                                     <><FaForward size={12} style={{ marginRight: 8 }} />Skip Break → Start Work</>
@@ -180,7 +181,7 @@ export function FocusPanel() {
                         <PanelSectionRow>
                             <ButtonItem
                                 layout="below"
-                                onClick={stopFocus}
+                                onClick={() => showMindfulnessPause('focus_stop', stopFocus)}
                             >
                                 <FaStop size={12} style={{ marginRight: 8 }} />
                                 Stop Session

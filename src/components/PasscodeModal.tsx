@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { ConfirmModal, showModal, Focusable } from "@decky/ui";
 import { verifyParentalCall } from "../hooks/useParentalControls";
+import { showMindfulnessPause } from "./MindfulnessPauseModal";
 
 // Prompt for the parental passcode; on success call onUnlocked.
 // NOTE: passcode compare is a plaintext STUB — not real auth.
 export function showUnlockModal(onUnlocked?: () => void) {
-    showModal(<UnlockModal onUnlocked={onUnlocked} />);
+    // Fire the mindfulness pause (parental_unlock trigger) before the passcode modal.
+    showMindfulnessPause('parental_unlock', () => showModal(<UnlockModal onUnlocked={onUnlocked} />));
 }
 
 const UnlockModal = ({ onUnlocked, closeModal }: { onUnlocked?: () => void; closeModal?: () => void }) => {

@@ -23,6 +23,7 @@ import { FocusNotification } from "./components/FocusNotification";
 import { GameOverlay } from "./components/GameOverlay";
 import showMissedReportModal from "./components/MissedReportModal";
 import { showSleepInhibitorModal } from "./components/SleepInhibitorModal";
+import { showMindfulnessPause } from "./components/MindfulnessPauseModal";
 import { TimeoutUIComposition } from "./components/TimeoutUIComposition";
 import { playAlarmSound } from "./utils/sounds";
 import { useSettings } from "./hooks/useSettings";
@@ -444,13 +445,15 @@ export default definePlugin(() => {
                     // Game start
                     runningAppIds.add(appId);
                     setGameRunning(true);
-                    reportGameStarted(appId, "").then((decision) => {
-                        if (decision.limited && decision.mode === "choose") {
-                            showLaunchMenu(decision.appid || appId, decision.app_name || "");
-                        } else if (decision.limited && decision.blocked) {
-                            showGameToast("Game Limits", `${appId} blocked: ${decision.blocked}`);
-                        }
-                    }).catch((e) => console.error("[Timeout] reportGameStarted failed:", e));
+                    showMindfulnessPause('game_launch', () => {
+                        reportGameStarted(appId, "").then((decision) => {
+                            if (decision.limited && decision.mode === "choose") {
+                                showLaunchMenu(decision.appid || appId, decision.app_name || "");
+                            } else if (decision.limited && decision.blocked) {
+                                showGameToast("Game Limits", `${appId} blocked: ${decision.blocked}`);
+                            }
+                        }).catch((e) => console.error("[Timeout] reportGameStarted failed:", e));
+                    });
                     console.log(`[Timeout] App ${appId} started. Running apps: ${runningAppIds.size}`);
                 } else {
                     // Game end

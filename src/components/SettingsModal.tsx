@@ -22,6 +22,7 @@ import { showExportModal, showImportModal } from "./BackupModals";
 import { BinarySelector } from "./BinarySelector";
 import { GameLimitsSettingsPage } from "./GameLimitsSettingsPage";
 import { ParentalControlsSettingsPage } from "./ParentalControlsSettingsPage";
+import { MindfulnessSettingsPage } from "./MindfulnessSettingsPage";
 import type { SoundFile, FocusTier } from "../types";
 
 // Backend callables
@@ -939,6 +940,11 @@ export const SettingsPage = () => {
             title: "Parental",
             icon: <FaShieldAlt size={16} />,
             content: <ParentalControlsSettingsPage />
+        },
+        {
+            title: "Mindfulness",
+            icon: <FaHourglassHalf size={16} />,
+            content: <MindfulnessSettingsPage />
         },
         {
             title: "Overlay",

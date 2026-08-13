@@ -82,7 +82,15 @@ DEFAULT_SETTINGS = {
             "cooldown_minutes": 0,
             "grace_seconds": 60,
             "five_min_finish_minutes": 5,
-            "warn_thresholds_minutes": [5, 1]
+            "warn_thresholds_minutes": [5, 1],
+            # Per-limit active windows: inside the window the limit applies; outside it relaxes (free play).
+            # start==end means an empty window -> never active -> that limit is always relaxed.
+            "opens_window_enabled": False,
+            "opens_window_start": "00:00",
+            "opens_window_end": "00:00",
+            "time_window_enabled": False,
+            "time_window_start": "00:00",
+            "time_window_end": "00:00"
         },
         "per_game": {}
     },
@@ -94,7 +102,20 @@ DEFAULT_SETTINGS = {
         "enabled": False,
         "passcode": "",  # plaintext STUB — NOT real auth; revisit before any release
         "mode": "self",  # "self" (locked) | "admin" (unlocked)
-        "locked_features": ["game_limits", "focus_tier", "take_a_break"]
+        "locked_features": ["game_limits", "focus_tier", "take_a_break", "mindfulness"]
+    },
+    # Mindfulness pause (universal friction before distractions / limit bypasses)
+    "mindfulness": {
+        "enabled": False,
+        "text": "Is there something more productive I could be doing?",
+        "cooldown": 5,  # seconds the Continue button stays disabled
+        "triggers": {
+            "game_launch": {"enabled": True},
+            "parental_unlock": {"enabled": True},
+            "focus_stop": {"enabled": True},
+            "focus_skip": {"enabled": True},
+            "settings_change": {"enabled": True}  # in schema; not wired yet (WIP)
+        }
     },
     # Game Limits streak (v1: local to game-limits; unify with Focus later)
     "game_limits_current_streak": 0,
@@ -1251,18 +1272,23 @@ class Plugin:
         except Exception:
             return 0
 
-    def _now_in_curfew(self, rule: dict) -> bool:
-        days = rule.get("curfew_days", [])
-        if days and datetime.now().strftime("%a") not in days:
-            return False
-        start = self._parse_hhmm(rule.get("curfew_start", "00:00"))
-        end = self._parse_hhmm(rule.get("curfew_end", "05:00"))
+    def _now_in_window(self, start_hhmm: str, end_hhmm: str) -> bool:
+        """True if current local time is inside [start, end). start==end is an empty
+        window -> never active. Wraps midnight (e.g. 22:00-06:00)."""
+        start = self._parse_hhmm(start_hhmm)
+        end = self._parse_hhmm(end_hhmm)
         now_min = datetime.now().hour * 60 + datetime.now().minute
         if start == end:
             return False
         if start < end:
             return start <= now_min < end
         return now_min >= start or now_min < end  # wraps midnight
+
+    def _now_in_curfew(self, rule: dict) -> bool:
+        days = rule.get("curfew_days", [])
+        if days and datetime.now().strftime("%a") not in days:
+            return False
+        return self._now_in_window(rule.get("curfew_start", "00:00"), rule.get("curfew_end", "05:00"))
 
     def _new_state_entry(self, rule: dict) -> dict:
         credits = 2 * rule.get("opens_per_day", 3) if rule.get("opens_enabled") else 0
@@ -1403,7 +1429,8 @@ class Plugin:
         if rule.get("curfew_enabled") and self._now_in_curfew(rule) and not (rule.get("opens_enabled") and rule.get("opens_bypass_curfew")):
             state[app_id] = entry; await self._save_game_limits_state(state)
             return {"limited": True, "blocked": "curfew", "appid": app_id, "app_name": app_name}
-        if rule.get("opens_enabled") and entry.get("credits_remaining", 0) < 1:
+        opens_outside_window = rule.get("opens_window_enabled") and not self._now_in_window(rule.get("opens_window_start", "00:00"), rule.get("opens_window_end", "00:00"))
+        if rule.get("opens_enabled") and not opens_outside_window and entry.get("credits_remaining", 0) < 1:
             state[app_id] = entry; await self._save_game_limits_state(state)
             return {"limited": True, "blocked": "no_credits", "appid": app_id, "app_name": app_name}
         state[app_id] = entry; await self._save_game_limits_state(state)
@@ -1417,7 +1444,8 @@ class Plugin:
         entry = self._new_state_entry(rule) if entry is None else self._maybe_reset_daily(entry, rule)
         now = time.time()
         is_half = (choice == "half")
-        if rule.get("opens_enabled"):
+        opens_outside_window = rule.get("opens_window_enabled") and not self._now_in_window(rule.get("opens_window_start", "00:00"), rule.get("opens_window_end", "00:00"))
+        if rule.get("opens_enabled") and not opens_outside_window:
             spend = 1 if is_half else 2
             if entry.get("credits_remaining", 0) < spend:
                 return {"error": "no_credits"}
@@ -1433,7 +1461,8 @@ class Plugin:
         for k in [k for k in list(entry.keys()) if str(k).startswith("warned_")]:
             del entry[k]
         cap_minutes = rule.get("half_open_cap_minutes") if is_half else rule.get("time_cap_minutes")
-        if rule.get("time_enabled") and not rule.get("opens_enabled") and cap_minutes:
+        time_outside_window = rule.get("time_window_enabled") and not self._now_in_window(rule.get("time_window_start", "00:00"), rule.get("time_window_end", "00:00"))
+        if rule.get("time_enabled") and not rule.get("opens_enabled") and cap_minutes and not time_outside_window:
             entry["session_cap_end"] = now + cap_minutes * 60
         else:
             entry["session_cap_end"] = None
@@ -1536,6 +1565,13 @@ class Plugin:
                         if await self._trip(appid, entry, rule, "curfew"):
                             dirty = True
                         continue
+                    # Lazy-cap: if a time-window was outside at launch but is now inside, set the cap now.
+                    time_outside_window = rule.get("time_window_enabled") and not self._now_in_window(rule.get("time_window_start", "00:00"), rule.get("time_window_end", "00:00"))
+                    if time_present and not time_outside_window and not entry.get("session_cap_end"):
+                        cap_min = rule.get("half_open_cap_minutes") if entry.get("is_half_open") else rule.get("time_cap_minutes")
+                        if cap_min:
+                            entry["session_cap_end"] = time.time() + cap_min * 60
+                            dirty = True
                     if time_present and entry.get("session_cap_end"):
                         remaining = entry["session_cap_end"] - time.time()
                         if remaining <= 0:
@@ -1649,7 +1685,7 @@ class Plugin:
         pc = (await self._get_user_settings()).get("parental_controls", {})
         if not pc.get("enabled") or pc.get("mode") != "self":
             return False
-        return feature in pc.get("locked_features", ["game_limits", "focus_tier", "take_a_break"])
+        return feature in pc.get("locked_features", ["game_limits", "focus_tier", "take_a_break", "mindfulness"])
 
     async def get_parental_controls(self) -> dict:
         return (await self._get_user_settings()).get("parental_controls", DEFAULT_SETTINGS["parental_controls"])
@@ -1698,6 +1734,46 @@ class Plugin:
         await self.settings_commit()
         await decky.emit("timeout_settings_updated", us)
         return True
+
+    # ---------------- Mindfulness pause (universal friction) ----------------
+    async def get_mindfulness(self) -> dict:
+        return (await self._get_user_settings()).get("mindfulness", DEFAULT_SETTINGS["mindfulness"])
+
+    async def update_mindfulness(self, partial: dict) -> dict:
+        # Parental-gated: in self mode mindfulness is a locked feature — you cannot
+        # disable your own friction without unlocking (admin). Free edit when controls are off.
+        if await self._parental_locked("mindfulness"):
+            return {"error": "parental_locked"}
+        us = await self._get_user_settings()
+        mf = json.loads(json.dumps(us.get("mindfulness", DEFAULT_SETTINGS["mindfulness"])))
+        if "enabled" in partial:
+            mf["enabled"] = bool(partial["enabled"])
+        if "text" in partial:
+            mf["text"] = str(partial["text"])
+        if "cooldown" in partial:
+            try:
+                mf["cooldown"] = max(1, int(partial["cooldown"]))
+            except Exception:
+                pass
+        if isinstance(partial.get("triggers"), dict):
+            triggers = mf.get("triggers", {})
+            for tid, tp in partial["triggers"].items():
+                if isinstance(tp, dict) and "enabled" in tp:
+                    triggers[tid] = {"enabled": bool(tp["enabled"])}
+            mf["triggers"] = triggers
+        us["mindfulness"] = mf
+        await self.settings_setSetting(SETTINGS_KEY_SETTINGS, us)
+        await self.settings_commit()
+        await decky.emit("timeout_settings_updated", us)
+        return mf
+
+    async def get_mindfulness_effective(self, trigger: str) -> dict:
+        """Resolve the effective pause config for a trigger. Never raises — missing
+        block (migration race) yields enabled=False so the caller auto-proceeds."""
+        mf = (await self._get_user_settings()).get("mindfulness", DEFAULT_SETTINGS["mindfulness"])
+        trig = (mf.get("triggers") or {}).get(trigger, {})
+        enabled = bool(mf.get("enabled")) and bool(trig.get("enabled", True))
+        return {"enabled": enabled, "text": mf.get("text", ""), "cooldown": int(mf.get("cooldown", 0))}
 
     async def get_overlay_data(self) -> dict:
         """Get aggregated data for the in-game overlay.
@@ -2022,7 +2098,7 @@ class Plugin:
 
         # --- skeleton: seed new feature keys idempotently (B/C/D) ---
         for _new_key in ("game_limits_config", "focus_default_tier",
-                          "focus_take_a_break_max_per_session", "parental_controls"):
+                          "focus_take_a_break_max_per_session", "parental_controls", "mindfulness"):
             if _new_key not in updated:
                 updated[_new_key] = DEFAULT_SETTINGS[_new_key]
                 changed = True
