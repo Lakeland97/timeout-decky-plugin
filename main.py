@@ -102,7 +102,20 @@ DEFAULT_SETTINGS = {
         "enabled": False,
         "passcode": "",  # plaintext STUB — NOT real auth; revisit before any release
         "mode": "self",  # "self" (locked) | "admin" (unlocked)
-        "locked_features": ["game_limits", "focus_tier", "take_a_break"]
+        "locked_features": ["game_limits", "focus_tier", "take_a_break", "mindfulness"]
+    },
+    # Mindfulness pause (universal friction before distractions / limit bypasses)
+    "mindfulness": {
+        "enabled": False,
+        "text": "Is there something more productive I could be doing?",
+        "cooldown": 5,  # seconds the Continue button stays disabled
+        "triggers": {
+            "game_launch": {"enabled": True},
+            "parental_unlock": {"enabled": True},
+            "focus_stop": {"enabled": True},
+            "focus_skip": {"enabled": True},
+            "settings_change": {"enabled": True}  # in schema; not wired yet (WIP)
+        }
     },
     # Game Limits streak (v1: local to game-limits; unify with Focus later)
     "game_limits_current_streak": 0,
@@ -1672,7 +1685,7 @@ class Plugin:
         pc = (await self._get_user_settings()).get("parental_controls", {})
         if not pc.get("enabled") or pc.get("mode") != "self":
             return False
-        return feature in pc.get("locked_features", ["game_limits", "focus_tier", "take_a_break"])
+        return feature in pc.get("locked_features", ["game_limits", "focus_tier", "take_a_break", "mindfulness"])
 
     async def get_parental_controls(self) -> dict:
         return (await self._get_user_settings()).get("parental_controls", DEFAULT_SETTINGS["parental_controls"])
@@ -1721,6 +1734,46 @@ class Plugin:
         await self.settings_commit()
         await decky.emit("timeout_settings_updated", us)
         return True
+
+    # ---------------- Mindfulness pause (universal friction) ----------------
+    async def get_mindfulness(self) -> dict:
+        return (await self._get_user_settings()).get("mindfulness", DEFAULT_SETTINGS["mindfulness"])
+
+    async def update_mindfulness(self, partial: dict) -> dict:
+        # Parental-gated: in self mode mindfulness is a locked feature — you cannot
+        # disable your own friction without unlocking (admin). Free edit when controls are off.
+        if await self._parental_locked("mindfulness"):
+            return {"error": "parental_locked"}
+        us = await self._get_user_settings()
+        mf = json.loads(json.dumps(us.get("mindfulness", DEFAULT_SETTINGS["mindfulness"])))
+        if "enabled" in partial:
+            mf["enabled"] = bool(partial["enabled"])
+        if "text" in partial:
+            mf["text"] = str(partial["text"])
+        if "cooldown" in partial:
+            try:
+                mf["cooldown"] = max(1, int(partial["cooldown"]))
+            except Exception:
+                pass
+        if isinstance(partial.get("triggers"), dict):
+            triggers = mf.get("triggers", {})
+            for tid, tp in partial["triggers"].items():
+                if isinstance(tp, dict) and "enabled" in tp:
+                    triggers[tid] = {"enabled": bool(tp["enabled"])}
+            mf["triggers"] = triggers
+        us["mindfulness"] = mf
+        await self.settings_setSetting(SETTINGS_KEY_SETTINGS, us)
+        await self.settings_commit()
+        await decky.emit("timeout_settings_updated", us)
+        return mf
+
+    async def get_mindfulness_effective(self, trigger: str) -> dict:
+        """Resolve the effective pause config for a trigger. Never raises — missing
+        block (migration race) yields enabled=False so the caller auto-proceeds."""
+        mf = (await self._get_user_settings()).get("mindfulness", DEFAULT_SETTINGS["mindfulness"])
+        trig = (mf.get("triggers") or {}).get(trigger, {})
+        enabled = bool(mf.get("enabled")) and bool(trig.get("enabled", True))
+        return {"enabled": enabled, "text": mf.get("text", ""), "cooldown": int(mf.get("cooldown", 0))}
 
     async def get_overlay_data(self) -> dict:
         """Get aggregated data for the in-game overlay.
@@ -2045,7 +2098,7 @@ class Plugin:
 
         # --- skeleton: seed new feature keys idempotently (B/C/D) ---
         for _new_key in ("game_limits_config", "focus_default_tier",
-                          "focus_take_a_break_max_per_session", "parental_controls"):
+                          "focus_take_a_break_max_per_session", "parental_controls", "mindfulness"):
             if _new_key not in updated:
                 updated[_new_key] = DEFAULT_SETTINGS[_new_key]
                 changed = True
