@@ -23,6 +23,7 @@ import { BinarySelector } from "./BinarySelector";
 import { GameLimitsSettingsPage } from "./GameLimitsSettingsPage";
 import { ParentalControlsSettingsPage } from "./ParentalControlsSettingsPage";
 import { MindfulnessSettingsPage } from "./MindfulnessSettingsPage";
+import { showMindfulnessPause } from "./MindfulnessPauseModal";
 import type { SoundFile, FocusTier } from "../types";
 
 // Backend callables
@@ -976,7 +977,9 @@ export const SettingsPage = () => {
 
 // Navigate to settings page (closes QAM first)
 export function navigateToSettings() {
-    Navigation.CloseSideMenus();
-    Navigation.Navigate(SETTINGS_ROUTE);
+    showMindfulnessPause('settings_enter', () => {
+        Navigation.CloseSideMenus();
+        Navigation.Navigate(SETTINGS_ROUTE);
+    });
 }
 

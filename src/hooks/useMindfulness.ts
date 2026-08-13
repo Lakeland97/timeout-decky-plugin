@@ -11,7 +11,7 @@ const DEFAULTS: MindfulnessConfig = {
         parental_unlock: { enabled: true },
         focus_stop: { enabled: true },
         focus_skip: { enabled: true },
-        settings_change: { enabled: true }
+        settings_enter: { enabled: true }
     }
 };
 

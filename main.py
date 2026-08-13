@@ -114,7 +114,7 @@ DEFAULT_SETTINGS = {
             "parental_unlock": {"enabled": True},
             "focus_stop": {"enabled": True},
             "focus_skip": {"enabled": True},
-            "settings_change": {"enabled": True}  # in schema; not wired yet (WIP)
+            "settings_enter": {"enabled": True}
         }
     },
     # Game Limits streak (v1: local to game-limits; unify with Focus later)
