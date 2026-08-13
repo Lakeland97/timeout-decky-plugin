@@ -237,7 +237,21 @@ export type AdhocBreakMinutes = 1 | 2 | 3 | 5 | 7 | 10;
 
 export type ParentalMode = 'self' | 'admin';
 
-export type ParentalLockedFeature = 'game_limits' | 'focus_tier' | 'take_a_break';
+export type ParentalLockedFeature = 'game_limits' | 'focus_tier' | 'take_a_break' | 'mindfulness';
+
+// Mindfulness pause (universal friction before distractions / limit bypasses)
+export type MindfulnessTriggerId = 'game_launch' | 'parental_unlock' | 'focus_stop' | 'focus_skip' | 'settings_change';
+export interface MindfulnessConfig {
+    enabled: boolean;
+    text: string;
+    cooldown: number;       // seconds the Continue button stays disabled
+    triggers: Partial<Record<MindfulnessTriggerId, { enabled: boolean }>>;
+}
+export interface MindfulnessEffective {
+    enabled: boolean;
+    text: string;
+    cooldown: number;
+}
 
 export interface ParentalControls {
     enabled: boolean;
