@@ -240,7 +240,7 @@ export type ParentalMode = 'self' | 'admin';
 export type ParentalLockedFeature = 'game_limits' | 'focus_tier' | 'take_a_break' | 'mindfulness';
 
 // Mindfulness pause (universal friction before distractions / limit bypasses)
-export type MindfulnessTriggerId = 'game_launch' | 'parental_unlock' | 'focus_stop' | 'focus_skip' | 'settings_change';
+export type MindfulnessTriggerId = 'game_launch' | 'parental_unlock' | 'focus_stop' | 'focus_skip' | 'settings_enter';
 export interface MindfulnessConfig {
     enabled: boolean;
     text: string;

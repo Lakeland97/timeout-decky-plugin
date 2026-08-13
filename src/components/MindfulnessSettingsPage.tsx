@@ -13,7 +13,7 @@ const TRIGGERS: { id: MindfulnessTriggerId; label: string; description?: string 
     { id: 'parental_unlock', label: 'Parental unlock' },
     { id: 'focus_stop', label: 'Stopping a focus session' },
     { id: 'focus_skip', label: 'Taking a break during focus' },
-    { id: 'settings_change', label: 'Changing limit settings', description: 'WIP — stored but not enforced yet' }
+    { id: 'settings_enter', label: 'Entering settings' }
 ];
 
 export const MindfulnessSettingsPage = () => {

@@ -48,7 +48,7 @@ Play-time limits, focus modes, and parental controls for Steam Deck.
 
 ### 🧘 Mindfulness pause
 - ◐ Cooldown before distractions
-- ✗ Cooldown on settings changes (WIP)
+- ◐ Cooldown on entering settings
 
 ### 🔥 Streaks
 - ◐ Game-limits streak
