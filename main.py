@@ -82,7 +82,15 @@ DEFAULT_SETTINGS = {
             "cooldown_minutes": 0,
             "grace_seconds": 60,
             "five_min_finish_minutes": 5,
-            "warn_thresholds_minutes": [5, 1]
+            "warn_thresholds_minutes": [5, 1],
+            # Per-limit active windows: inside the window the limit applies; outside it relaxes (free play).
+            # start==end means an empty window -> never active -> that limit is always relaxed.
+            "opens_window_enabled": False,
+            "opens_window_start": "00:00",
+            "opens_window_end": "00:00",
+            "time_window_enabled": False,
+            "time_window_start": "00:00",
+            "time_window_end": "00:00"
         },
         "per_game": {}
     },
@@ -1251,18 +1259,23 @@ class Plugin:
         except Exception:
             return 0
 
-    def _now_in_curfew(self, rule: dict) -> bool:
-        days = rule.get("curfew_days", [])
-        if days and datetime.now().strftime("%a") not in days:
-            return False
-        start = self._parse_hhmm(rule.get("curfew_start", "00:00"))
-        end = self._parse_hhmm(rule.get("curfew_end", "05:00"))
+    def _now_in_window(self, start_hhmm: str, end_hhmm: str) -> bool:
+        """True if current local time is inside [start, end). start==end is an empty
+        window -> never active. Wraps midnight (e.g. 22:00-06:00)."""
+        start = self._parse_hhmm(start_hhmm)
+        end = self._parse_hhmm(end_hhmm)
         now_min = datetime.now().hour * 60 + datetime.now().minute
         if start == end:
             return False
         if start < end:
             return start <= now_min < end
         return now_min >= start or now_min < end  # wraps midnight
+
+    def _now_in_curfew(self, rule: dict) -> bool:
+        days = rule.get("curfew_days", [])
+        if days and datetime.now().strftime("%a") not in days:
+            return False
+        return self._now_in_window(rule.get("curfew_start", "00:00"), rule.get("curfew_end", "05:00"))
 
     def _new_state_entry(self, rule: dict) -> dict:
         credits = 2 * rule.get("opens_per_day", 3) if rule.get("opens_enabled") else 0
@@ -1403,7 +1416,8 @@ class Plugin:
         if rule.get("curfew_enabled") and self._now_in_curfew(rule) and not (rule.get("opens_enabled") and rule.get("opens_bypass_curfew")):
             state[app_id] = entry; await self._save_game_limits_state(state)
             return {"limited": True, "blocked": "curfew", "appid": app_id, "app_name": app_name}
-        if rule.get("opens_enabled") and entry.get("credits_remaining", 0) < 1:
+        opens_outside_window = rule.get("opens_window_enabled") and not self._now_in_window(rule.get("opens_window_start", "00:00"), rule.get("opens_window_end", "00:00"))
+        if rule.get("opens_enabled") and not opens_outside_window and entry.get("credits_remaining", 0) < 1:
             state[app_id] = entry; await self._save_game_limits_state(state)
             return {"limited": True, "blocked": "no_credits", "appid": app_id, "app_name": app_name}
         state[app_id] = entry; await self._save_game_limits_state(state)
@@ -1417,7 +1431,8 @@ class Plugin:
         entry = self._new_state_entry(rule) if entry is None else self._maybe_reset_daily(entry, rule)
         now = time.time()
         is_half = (choice == "half")
-        if rule.get("opens_enabled"):
+        opens_outside_window = rule.get("opens_window_enabled") and not self._now_in_window(rule.get("opens_window_start", "00:00"), rule.get("opens_window_end", "00:00"))
+        if rule.get("opens_enabled") and not opens_outside_window:
             spend = 1 if is_half else 2
             if entry.get("credits_remaining", 0) < spend:
                 return {"error": "no_credits"}
@@ -1433,7 +1448,8 @@ class Plugin:
         for k in [k for k in list(entry.keys()) if str(k).startswith("warned_")]:
             del entry[k]
         cap_minutes = rule.get("half_open_cap_minutes") if is_half else rule.get("time_cap_minutes")
-        if rule.get("time_enabled") and not rule.get("opens_enabled") and cap_minutes:
+        time_outside_window = rule.get("time_window_enabled") and not self._now_in_window(rule.get("time_window_start", "00:00"), rule.get("time_window_end", "00:00"))
+        if rule.get("time_enabled") and not rule.get("opens_enabled") and cap_minutes and not time_outside_window:
             entry["session_cap_end"] = now + cap_minutes * 60
         else:
             entry["session_cap_end"] = None
@@ -1536,6 +1552,13 @@ class Plugin:
                         if await self._trip(appid, entry, rule, "curfew"):
                             dirty = True
                         continue
+                    # Lazy-cap: if a time-window was outside at launch but is now inside, set the cap now.
+                    time_outside_window = rule.get("time_window_enabled") and not self._now_in_window(rule.get("time_window_start", "00:00"), rule.get("time_window_end", "00:00"))
+                    if time_present and not time_outside_window and not entry.get("session_cap_end"):
+                        cap_min = rule.get("half_open_cap_minutes") if entry.get("is_half_open") else rule.get("time_cap_minutes")
+                        if cap_min:
+                            entry["session_cap_end"] = time.time() + cap_min * 60
+                            dirty = True
                     if time_present and entry.get("session_cap_end"):
                         remaining = entry["session_cap_end"] - time.time()
                         if remaining <= 0:
