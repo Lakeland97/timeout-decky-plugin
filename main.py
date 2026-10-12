@@ -308,12 +308,19 @@ class Plugin:
 
         if should_inhibit:
             reason = "Timeout: " + ", ".join(reason_parts) + " active"
-            await self._acquire_sleep_inhibitor(reason)
-            await decky.emit("timeout_sleep_inhibitor_updated", {
-                "active": True,
-                "reason": reason,
-                "items": inhibiting_items
-            })
+            if await self._acquire_sleep_inhibitor(reason):
+                await decky.emit("timeout_sleep_inhibitor_updated", {
+                    "active": True,
+                    "reason": reason,
+                    "items": inhibiting_items
+                })
+            else:
+                # Acquisition failed: never present the inhibitor as active.
+                await decky.emit("timeout_sleep_inhibitor_updated", {
+                    "active": False,
+                    "reason": "acquire_failed",
+                    "items": []
+                })
         else:
             await self._release_sleep_inhibitor()
             # _release_sleep_inhibitor emits the inactive event
@@ -362,13 +369,31 @@ class Plugin:
             pass
         except Exception as e:
             decky.logger.error(f"Timeout: Jiggler loop error: {e}")
-            self._sleep_inhibitor_active = False
+            # Full release: destroy the uinput device (no leaked fd, no
+            # phantom input device), notify the frontend, then clear the
+            # active flag - in a finally so a failed emit cannot leave a
+            # phantom "active" state behind.
+            self._destroy_uinput_device()
+            self._jiggler_task = None
+            try:
+                await decky.emit("timeout_sleep_inhibitor_updated", {
+                    "active": False,
+                    "reason": "",
+                    "items": []
+                })
+            finally:
+                self._sleep_inhibitor_active = False
 
-    async def _acquire_sleep_inhibitor(self, reason: str):
-        """Acquire the sleep inhibitor using uinput virtual keyboard."""
+    async def _acquire_sleep_inhibitor(self, reason: str) -> bool:
+        """Acquire the sleep inhibitor using uinput virtual keyboard.
+
+        Returns True on success (including when already active) and False on
+        any acquisition failure (uinput open/ioctl failure or a missing event
+        loop), so _update_sleep_inhibitor can emit an accurate state.
+        """
         if self._sleep_inhibitor_active:
-            return  # Already active
-        
+            return True  # Already active
+
         try:
             # Create uinput virtual keyboard device for Game Mode sleep prevention
             # Using keyboard KEY_UNKNOWN to avoid interfering with gamepad input
@@ -377,41 +402,51 @@ class Plugin:
                 UI_SET_EVBIT = 0x40045564
                 UI_SET_KEYBIT = 0x40045565
                 UI_DEV_CREATE = 0x5501
-                
+
                 fd = os.open('/dev/uinput', os.O_WRONLY | os.O_NONBLOCK)
-                
+
                 # Enable EV_KEY (keyboard events) and KEY_UNKNOWN (240)
                 fcntl.ioctl(fd, UI_SET_EVBIT, 1)  # EV_KEY
                 fcntl.ioctl(fd, UI_SET_KEYBIT, 240)  # KEY_UNKNOWN - doesn't map to any real key
-                
+
                 # Build uinput_user_dev struct (size 1116 on Steam Deck)
                 name = b'Timeout Sleep Inhibitor'.ljust(80, b'\x00')
                 input_id = struct.pack('HHHH', 3, 1, 1, 1)  # bustype, vendor, product, version
                 total_size = 1116  # Confirmed working size on Steam Deck
                 payload = name + input_id + (b'\x00' * (total_size - len(name) - len(input_id)))
-                
+
                 os.write(fd, payload)
                 fcntl.ioctl(fd, UI_DEV_CREATE)
-                
+
                 self._uinput_fd = fd
                 decky.logger.info("Timeout: Created uinput keyboard device successfully")
-            except Exception as e:
-                decky.logger.error(f"Timeout: Failed to setup uinput: {e}")
+            except Exception:
+                decky.logger.exception("Timeout: Failed to setup uinput")
                 self._uinput_fd = -1
-                return  # Cannot proceed without uinput
-            
+                return False  # Cannot proceed without uinput
+
             # Start jiggler task
-            if self.loop and self._uinput_fd > 0:
-                self._sleep_inhibitor_active = True
-                self._jiggler_task = self.loop.create_task(self._jiggler_loop())
-                self._jiggler_task.add_done_callback(self._log_task_exception)
-                decky.logger.info(f"Timeout: Sleep inhibitor active - {reason}")
-                await decky.emit("timeout_sleep_inhibitor_updated", {
-                    "active": True,
-                    "reason": reason
-                })
-        except Exception as e:
-            decky.logger.error(f"Timeout: Failed to acquire sleep inhibitor: {e}")
+            if not self.loop or self._uinput_fd <= 0:
+                decky.logger.error("Timeout: Cannot start sleep inhibitor: no running event loop")
+                # Tear down the device created above: never leak an fd or a
+                # phantom input device when the jiggler cannot start.
+                self._destroy_uinput_device()
+                return False
+
+            self._jiggler_task = self.loop.create_task(self._jiggler_loop())
+            self._jiggler_task.add_done_callback(self._log_task_exception)
+            self._sleep_inhibitor_active = True
+            decky.logger.info(f"Timeout: Sleep inhibitor active - {reason}")
+            # Emission is centralized in _update_sleep_inhibitor, which emits
+            # active/inactive based on this function's return value.
+            return True
+        except Exception:
+            decky.logger.exception("Timeout: Failed to acquire sleep inhibitor")
+            if not self._sleep_inhibitor_active:
+                # Partial acquisition (e.g. task creation failed): tear the
+                # device down so neither fd nor device leaks.
+                self._destroy_uinput_device()
+            return False
 
     async def _release_sleep_inhibitor(self):
         """Release the sleep inhibitor."""
@@ -425,16 +460,7 @@ class Plugin:
                 self._jiggler_task = None
             
             # Destroy and close uinput device
-            if self._uinput_fd > 0:
-                try:
-                    UI_DEV_DESTROY = 0x5502
-                    fcntl.ioctl(self._uinput_fd, UI_DEV_DESTROY)
-                    os.close(self._uinput_fd)
-                    decky.logger.info("Timeout: uinput device destroyed")
-                except Exception as e:
-                    decky.logger.warning(f"Timeout: Error closing uinput: {e}")
-                self._uinput_fd = -1
-                
+            self._destroy_uinput_device()
             self._sleep_inhibitor_active = False
             decky.logger.info("Timeout: Sleep inhibitor released")
             await decky.emit("timeout_sleep_inhibitor_updated", {
@@ -453,6 +479,23 @@ class Plugin:
                 self._uinput_fd = -1
             self._jiggler_task = None
             self._sleep_inhibitor_active = False
+
+    def _destroy_uinput_device(self) -> None:
+        """Destroy the virtual uinput device and close its fd (idempotent).
+
+        Lock-free like the rest of the sleep-inhibitor path. _uinput_fd is
+        cleared even when the ioctl/close fails, so a half-dead device can
+        never be written to again and never leaks a phantom input node.
+        """
+        if self._uinput_fd > 0:
+            try:
+                UI_DEV_DESTROY = 0x5502
+                fcntl.ioctl(self._uinput_fd, UI_DEV_DESTROY)
+                os.close(self._uinput_fd)
+                decky.logger.info("Timeout: uinput device destroyed")
+            except Exception:
+                decky.logger.exception("Timeout: Error closing uinput")
+            self._uinput_fd = -1
 
     async def get_sleep_inhibitor_status(self) -> dict:
         """Items currently flagged to prevent sleep."""
@@ -2805,6 +2848,14 @@ class Plugin:
             })
             await decky.emit("timeout_missed_items_updated", [])
             
+            # 7b. Recompute the sleep inhibitor from the wiped state: with
+            # focus cleared it releases (cancels the jiggler, destroys the
+            # uinput device) and emits the inactive state to the frontend.
+            try:
+                await self._update_sleep_inhibitor()
+            except Exception:
+                decky.logger.exception("Timeout: Sleep inhibitor sync failed after factory reset")
+
             # 8. Restart background tasks
             self.suspend_monitor_task = self.loop.create_task(self._suspend_monitor())
             self.suspend_monitor_task.add_done_callback(self._log_task_exception)
