@@ -403,12 +403,13 @@ export default definePlugin(() => {
     addEventListener('timeout_focus_break_ended', handleFocusBreakEnded);
 
     // Missed items toast
-    addEventListener('timeout_missed_items_toast', (count: number) => {
+    const handleMissedItemsToast = (count: number) => {
         toaster.toast({
             title: "Timeout",
             body: `You missed ${count} alert${count !== 1 ? 's' : ''} while away.`
         });
-    });
+    };
+    addEventListener('timeout_missed_items_toast', handleMissedItemsToast);
 
     // Game Limits event handlers
     const handleGameWarning = (e: { appid: string; reason: string; grace_remaining?: number }) => {
@@ -508,6 +509,7 @@ export default definePlugin(() => {
         onDismount: () => {
             removeEventListener('timeout_focus_work_ended', handleFocusWorkEnded);
             removeEventListener('timeout_focus_break_ended', handleFocusBreakEnded);
+            removeEventListener('timeout_missed_items_toast', handleMissedItemsToast);
             removeEventListener("timeout_game_warning", handleGameWarning);
             removeEventListener("timeout_game_five_min_available", handleGameFiveMin);
             removeEventListener("timeout_game_terminated", handleGameTerminated);

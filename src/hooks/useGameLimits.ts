@@ -44,13 +44,17 @@ export function useGameLimits() {
         const onSettings = () => { getConfigCall().then(setConfig).catch(() => {}); };
         const onState = (s: GameLimitsState) => setState(s);
         const onStreak = (s: { current: number; longest: number }) => setStreak(s);
+        // Backup import: refetch config + state through the initial load path.
+        const onDataImported = () => { load(); };
         addEventListener('timeout_settings_updated', onSettings);
         addEventListener('timeout_game_state', onState);
         addEventListener('timeout_game_streak', onStreak);
+        addEventListener('timeout_data_imported', onDataImported);
         return () => {
             removeEventListener('timeout_settings_updated', onSettings);
             removeEventListener('timeout_game_state', onState);
             removeEventListener('timeout_game_streak', onStreak);
+            removeEventListener('timeout_data_imported', onDataImported);
         };
     }, [load]);
 

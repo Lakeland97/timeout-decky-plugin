@@ -1341,6 +1341,7 @@ class Plugin:
                                 "duration": work_duration,
                                 "sound": focus_sound,
                                 "subtle_mode": is_subtle,
+                                "volume": user_settings.get("focus_volume", 100),
                                 "stats": await self._get_focus_stats()
                             }
                             new_state["adhoc_breaks_used"] = state.get("adhoc_breaks_used", 0)
@@ -1367,6 +1368,7 @@ class Plugin:
                                 "break_type": break_type,
                                 "sound": user_settings.get("focus_sound", "alarm.mp3"),
                                 "subtle_mode": user_settings.get("focus_subtle_mode", False),
+                                "volume": user_settings.get("focus_volume", 100),
                                 "stats": await self._get_focus_stats()
                             }
                             new_state["adhoc_breaks_used"] = state.get("adhoc_breaks_used", 0)
@@ -1577,6 +1579,7 @@ class Plugin:
             await decky.emit("timeout_settings_updated", us)
             if break_streak:
                 await decky.emit("timeout_game_streak", {"current": 0, "longest": us.get("game_limits_longest_streak", 0)})
+            await self._emit_game_state()
         await self._backup_settings_file()
         return cfg
 
@@ -1687,6 +1690,7 @@ class Plugin:
             us["game_limits_last_streak_date"] = today
             await self._settings_setSetting(SETTINGS_KEY_SETTINGS, us)
             await decky.emit("timeout_game_streak", {"current": cur, "longest": us["game_limits_longest_streak"]})
+            await self._emit_game_state()
 
     async def _break_game_limits_streak(self):
         """Zero the current streak. Caller must hold SETTINGS_LOCK (acquiring here
@@ -1695,6 +1699,7 @@ class Plugin:
         us["game_limits_current_streak"] = 0
         await self._settings_setSetting(SETTINGS_KEY_SETTINGS, us)
         await decky.emit("timeout_game_streak", {"current": 0, "longest": us.get("game_limits_longest_streak", 0)})
+        await self._emit_game_state()
 
     async def reset_game_limits_streak(self) -> bool:
         async with SETTINGS_LOCK:
@@ -1704,6 +1709,7 @@ class Plugin:
             us["game_limits_last_streak_date"] = ""
             await self._settings_setSetting(SETTINGS_KEY_SETTINGS, us)
             await decky.emit("timeout_game_streak", {"current": 0, "longest": 0})
+            await self._emit_game_state()
         return True
 
     def _scan_reaper_procs(self) -> dict:
@@ -1833,6 +1839,7 @@ class Plugin:
                 state[app_id] = entry; await self._save_game_limits_state(state)
                 return await self._block_launch(app_id, app_name, "no_credits")
             state[app_id] = entry; await self._save_game_limits_state(state)
+            await self._emit_game_state()
             return {"limited": True, "mode": "choose", "appid": app_id, "app_name": app_name}
 
     async def choose_launch(self, app_id: str, choice: str) -> dict:
@@ -1852,7 +1859,6 @@ class Plugin:
                 if entry.get("credits_remaining", 0) < spend:
                     return {"error": "no_credits"}
                 entry["credits_remaining"] = entry.get("credits_remaining", 0) - spend
-                await decky.emit("timeout_game_credits_changed", {"appid": app_id, "credits_remaining": entry["credits_remaining"]})
             entry["is_half_open"] = is_half
             entry["session_start"] = now
             entry["in_grace"] = False
@@ -1876,7 +1882,7 @@ class Plugin:
             state[app_id] = entry
             await self._save_game_limits_state(state)
             payload = {"appid": app_id, "app_name": entry.get("app_name", ""), "mode": "half" if is_half else "full", "cap_end": entry["session_cap_end"]}
-            await decky.emit("timeout_game_session_started", payload)
+            await self._emit_game_state()
             if not self.game_limits_task or self.game_limits_task.done():
                 self.game_limits_task = self.loop.create_task(self._game_limits_handler())
                 self.game_limits_task.add_done_callback(self._log_task_exception)
@@ -1912,7 +1918,7 @@ class Plugin:
             entry.pop("kill_retry_at", None)
             state[app_id] = entry
             await self._save_game_limits_state(state)
-            await decky.emit("timeout_game_session_stopped", {"appid": app_id, "reason": "terminated" if was_killed else "manual"})
+            await self._emit_game_state()
             return True
 
     async def use_five_min_finish(self, app_id: str) -> bool:
@@ -1928,6 +1934,7 @@ class Plugin:
             entry["grace_until"] = time.time() + mins * 60
             state[app_id] = entry
             await self._save_game_limits_state(state)
+            await self._emit_game_state()
             await decky.emit("timeout_game_warning", {"appid": app_id, "reason": "time_warn", "grace_remaining": mins * 60})
             return True
 
@@ -2042,6 +2049,7 @@ class Plugin:
                                         await decky.emit("timeout_game_warning", {"appid": appid, "reason": "time_warn", "grace_remaining": int(max(0, remaining))})
                         if dirty:
                             await self._save_game_limits_state(state)
+                            await self._emit_game_state()
                     if not any_active:
                         return  # nothing running; task restarts on next choose_launch
                     await asyncio.sleep(1)
@@ -3153,6 +3161,7 @@ class Plugin:
                 "duration": 0
             })
             await decky.emit("timeout_missed_items_updated", [])
+            await self._emit_game_state()
             
             # 7b. Recompute the sleep inhibitor from the wiped state: with
             # focus cleared it releases (cancels the jiggler, destroys the

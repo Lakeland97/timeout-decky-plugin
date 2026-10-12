@@ -92,13 +92,20 @@ export function useSettings() {
             setSettings(updatedSettings);
         };
 
+        // Backup import: refetch settings through the initial load path.
+        const handleDataImported = () => {
+            loadData();
+        };
+
         addEventListener('timeout_settings_updated', handleSettingsUpdated);
+        addEventListener('timeout_data_imported', handleDataImported);
 
         // Load initial data
         loadData();
 
         return () => {
             removeEventListener('timeout_settings_updated', handleSettingsUpdated);
+            removeEventListener('timeout_data_imported', handleDataImported);
         };
     }, [loadData]);
 
