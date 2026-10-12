@@ -688,6 +688,41 @@ class Plugin:
             
         return result
 
+    # ---------------- Path containment (sound names) ----------------
+
+    _SOUND_EXTENSIONS = (".mp3", ".wav", ".ogg")
+
+    def _safe_sound_name(self, filename: str, *,
+                         sounds_dir: str | None = None) -> str | None:
+        """Sanitize a caller-supplied sound filename to a plain name that
+        resolves inside its sounds directory.
+
+        Requires a basename-only name (no "/", no backslash, no NUL), an
+        allowed audio extension (.mp3/.wav/.ogg — the same set get_sounds
+        lists), and a realpath that stays inside `sounds_dir` — the
+        custom_sounds dir by default, or the built-in dist dir when given
+        (symlink-escape guard).
+
+        Returns the safe basename, or None when the name is refused.
+        Lock-free and sync: a pure path function (SETTINGS_LOCK is
+        non-reentrant)."""
+        if not isinstance(filename, str):
+            return None
+        name = filename.strip()
+        if not name or "\0" in name or "\\" in name or name != os.path.basename(name):
+            return None
+        if not name.lower().endswith(self._SOUND_EXTENSIONS):
+            return None
+        base_dir = os.path.realpath(
+            sounds_dir if sounds_dir else os.path.join(settingsDir, "custom_sounds"))
+        resolved = os.path.realpath(os.path.join(base_dir, name))
+        try:
+            if resolved == base_dir or os.path.commonpath([resolved, base_dir]) != base_dir:
+                return None
+        except (OSError, ValueError):
+            return None
+        return name
+
     async def get_sound_data(self, filename: str) -> dict:
         """Get base64-encoded sound data for a custom sound file.
         
@@ -710,7 +745,12 @@ class Plugin:
             return result
             
         actual_name = filename[7:]  # Remove "custom:" prefix
-        file_path = os.path.join(settingsDir, "custom_sounds", actual_name)
+        safe_name = self._safe_sound_name(actual_name)
+        if safe_name is None:
+            decky.logger.error(f"Timeout: Rejected unsafe sound name: {actual_name!r}")
+            result["error"] = f"File not found: {actual_name}"
+            return result
+        file_path = os.path.join(settingsDir, "custom_sounds", safe_name)
         
         if not os.path.exists(file_path):
             result["error"] = f"File not found: {file_path}"
@@ -755,18 +795,27 @@ class Plugin:
         if not filename or filename == "soundless":
             return True
             
-        # Resolve file path
+        # Resolve file path (caller-supplied name contained to a sounds dir)
         file_path = None
         if filename.startswith("custom:"):
             # Custom sound in settingsDir/custom_sounds
             actual_name = filename[7:]  # Remove "custom:" prefix
-            file_path = os.path.join(settingsDir, "custom_sounds", actual_name)
+            safe_name = self._safe_sound_name(actual_name)
+            if safe_name is None:
+                decky.logger.error(f"Timeout: Rejected unsafe sound name: {actual_name!r}")
+                return False
+            file_path = os.path.join(settingsDir, "custom_sounds", safe_name)
         else:
             # Built-in sound in dist/
             plugin_dir = os.environ.get("DECKY_PLUGIN_DIR", "")
             if not plugin_dir:
                 plugin_dir = os.path.dirname(settingsDir)
-            file_path = os.path.join(plugin_dir, "dist", filename)
+            safe_name = self._safe_sound_name(
+                filename, sounds_dir=os.path.join(plugin_dir, "dist"))
+            if safe_name is None:
+                decky.logger.error(f"Timeout: Rejected unsafe sound name: {filename!r}")
+                return False
+            file_path = os.path.join(plugin_dir, "dist", safe_name)
         
         if not os.path.exists(file_path):
             decky.logger.error(f"Timeout: Sound file not found: {file_path}")
@@ -827,15 +876,24 @@ class Plugin:
         if os.path.exists(custom_dir):
             result["custom_sounds_files"] = os.listdir(custom_dir)
         
-        # Resolve path
+        # Resolve path (caller-supplied name contained to a sounds dir)
         if filename.startswith("custom:"):
             actual_name = filename[7:]
-            result["resolved_path"] = os.path.join(settingsDir, "custom_sounds", actual_name)
+            safe_name = self._safe_sound_name(actual_name)
+            if safe_name is None:
+                decky.logger.error(f"Timeout: Rejected unsafe sound name: {actual_name!r}")
+            else:
+                result["resolved_path"] = os.path.join(settingsDir, "custom_sounds", safe_name)
         else:
             plugin_dir = os.environ.get("DECKY_PLUGIN_DIR", "")
             if not plugin_dir:
                 plugin_dir = os.path.dirname(settingsDir)
-            result["resolved_path"] = os.path.join(plugin_dir, "dist", filename)
+            safe_name = self._safe_sound_name(
+                filename, sounds_dir=os.path.join(plugin_dir, "dist"))
+            if safe_name is None:
+                decky.logger.error(f"Timeout: Rejected unsafe sound name: {filename!r}")
+            else:
+                result["resolved_path"] = os.path.join(plugin_dir, "dist", safe_name)
         
         result["file_exists"] = os.path.exists(result["resolved_path"]) if result["resolved_path"] else False
         
@@ -2461,6 +2519,46 @@ class Plugin:
         
         return {"alerts": combined, "settings": overlay_settings}
 
+    # ---------------- Path containment (backup export/import) ----------------
+
+    def _safe_user_path(self, filepath: str, *, for_write: bool = False,
+                        allow_overwrite: bool = False) -> str | None:
+        """Contain a caller-supplied backup path to the tester allowlist.
+
+        Expands `~`, resolves symlinks via realpath, and requires the result
+        to sit under ~/Documents or ~/Downloads (the two tester-friendly
+        locations). For writes an existing target is refused (returns None)
+        so the caller can surface an explicit "file_exists" error instead of
+        clobbering — unless allow_overwrite=True is passed.
+
+        Returns the resolved absolute path, or None when the path is not
+        allowed (or exists while for_write and not allow_overwrite).
+
+        Lock-free and sync: a pure path function (SETTINGS_LOCK is
+        non-reentrant; both callers invoke it without holding the lock).
+        """
+        if not isinstance(filepath, str) or not filepath.strip():
+            return None
+        try:
+            resolved = os.path.realpath(os.path.expanduser(filepath))
+            home = os.path.realpath(os.path.expanduser("~"))
+            allowed_roots = (
+                os.path.join(home, "Documents"),
+                os.path.join(home, "Downloads"),
+            )
+            # contained = strictly inside an allowed root (not the root itself)
+            contained = any(
+                resolved != root and os.path.commonpath([resolved, root]) == root
+                for root in allowed_roots
+            )
+        except (OSError, ValueError):
+            return None
+        if not contained:
+            return None
+        if for_write and not allow_overwrite and os.path.exists(resolved):
+            return None
+        return resolved
+
     async def export_backup(self) -> str:
         """Export user data (settings) to JSON string."""
         data = {
@@ -2470,45 +2568,68 @@ class Plugin:
         }
         return json.dumps(data, indent=2)
 
-    async def export_backup_to_file(self, filepath: str) -> bool:
-        """Export backup to a specific file."""
+    async def export_backup_to_file(self, filepath: str,
+                                    allow_overwrite: bool = False) -> dict:
+        """Export backup to a specific file (path-contained).
+
+        Returns {"ok": True, "path": ...} on success, else
+        {"ok": False, "error": "path_not_allowed" | "file_exists" | "export_failed"}.
+        """
         try:
-            # Expand ~ to user home
-            filepath = os.path.expanduser(filepath)
-            
-            # Create directory if it doesn't exist
-            directory = os.path.dirname(filepath)
+            target = self._safe_user_path(filepath, for_write=True,
+                                          allow_overwrite=allow_overwrite)
+            if target is None:
+                # Distinguish refusal reason for the UI toast: a contained
+                # path that already exists is file_exists, anything else
+                # never passed the allowlist.
+                allowed = self._safe_user_path(filepath)
+                if allowed is not None and os.path.exists(allowed):
+                    decky.logger.warning(f"Timeout: Export refused (file exists): {allowed}")
+                    return {"ok": False, "error": "file_exists"}
+                decky.logger.warning(f"Timeout: Export refused (path not allowed): {filepath}")
+                return {"ok": False, "error": "path_not_allowed"}
+
+            # Create directory if it doesn't exist (already allowlist-contained)
+            directory = os.path.dirname(target)
             if directory and not os.path.exists(directory):
                 os.makedirs(directory)
-                
+
             json_str = await self.export_backup()
-            
-            with open(filepath, 'w') as f:
+
+            with open(target, 'w') as f:
                 f.write(json_str)
-            
-            decky.logger.info(f"Timeout: Backup exported to {filepath}")
-            return True
+
+            decky.logger.info(f"Timeout: Backup exported to {target}")
+            return {"ok": True, "path": target}
         except Exception as e:
             decky.logger.error(f"Timeout: Export to file failed: {e}")
-            return False
+            return {"ok": False, "error": "export_failed"}
 
-    async def import_backup_from_file(self, filepath: str) -> bool:
-        """Import backup from a specific file."""
+    async def import_backup_from_file(self, filepath: str) -> dict:
+        """Import backup from a specific file (path-contained).
+
+        Returns {"ok": True} on success, else
+        {"ok": False, "error": "path_not_allowed" | "file_not_found" | "import_failed"}.
+        """
         try:
-            # Expand ~ to user home
-            filepath = os.path.expanduser(filepath)
-            
-            if not os.path.exists(filepath):
-                decky.logger.error(f"Timeout: Import file not found: {filepath}")
-                return False
-                
-            with open(filepath, 'r') as f:
+            target = self._safe_user_path(filepath)
+            if target is None:
+                decky.logger.warning(f"Timeout: Import refused (path not allowed): {filepath}")
+                return {"ok": False, "error": "path_not_allowed"}
+
+            if not os.path.exists(target):
+                decky.logger.error(f"Timeout: Import file not found: {target}")
+                return {"ok": False, "error": "file_not_found"}
+
+            with open(target, 'r') as f:
                 json_str = f.read()
-                
-            return await self.import_backup(json_str)
+
+            if await self.import_backup(json_str):
+                return {"ok": True}
+            return {"ok": False, "error": "import_failed"}
         except Exception as e:
-             decky.logger.error(f"Timeout: Import from file failed: {e}")
-             return False
+            decky.logger.error(f"Timeout: Import from file failed: {e}")
+            return {"ok": False, "error": "import_failed"}
 
     async def import_backup(self, json_str: str) -> bool:
         """Import user data from JSON string."""
@@ -2529,7 +2650,10 @@ class Plugin:
                 # update_settings keeps its CURRENT value instead of being
                 # overwritten (or reset to defaults) by the imported blob.
                 # Lock-free checks, run before acquiring the lock.
-                imported = dict(data["user_settings"])
+                # Step: validate imported JSON — run the payload through the
+                # Task 3 read-boundary sanitizer (one call) so a hostile or
+                # broken backup cannot plant task-killing values.
+                imported = self._sanitize_user_settings(data["user_settings"])
                 _dropped = [k for k in imported if await self._is_protected_setting_key(k)]
                 if _dropped:
                     _current = await self._get_user_settings()
