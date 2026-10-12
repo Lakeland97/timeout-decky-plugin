@@ -3,11 +3,32 @@ import { callable } from "@decky/api";
 import { useState } from "react";
 
 
-const exportBackupToFileCall = callable<[string], boolean>('export_backup_to_file');
-const importBackupFromFileCall = callable<[string], boolean>('import_backup_from_file');
+// Backend contract (main.py): export_backup_to_file and
+// import_backup_from_file each return {"ok": true, ...} on success or
+// {"ok": false, "error": <code>} on refusal — never a bare boolean.
+type BackupResult = { ok: boolean; error?: string };
 
-// Default path for Steam Deck user
-const DEFAULT_BACKUP_PATH = "/home/deck/timeout_backup.json";
+const exportBackupToFileCall = callable<[string], BackupResult>('export_backup_to_file');
+const importBackupFromFileCall = callable<[string], BackupResult>('import_backup_from_file');
+
+// Default path for Steam Deck user — must sit inside the backend's
+// ~/Documents / ~/Downloads allowlist (main.py `_safe_user_path`) or the
+// default flow is deterministically refused.
+const DEFAULT_BACKUP_PATH = "~/Documents/timeout_backup.json";
+
+// Refusal codes → short human messages for the modal status line.
+const EXPORT_ERROR_MESSAGES: Record<string, string> = {
+    path_not_allowed: "Path not allowed — use a file under ~/Documents or ~/Downloads.",
+    file_exists: "A file already exists at that path — pick a different name.",
+    export_failed: "Export failed — check the logs.",
+};
+const IMPORT_ERROR_MESSAGES: Record<string, string> = {
+    path_not_allowed: "Path not allowed — use a file under ~/Documents or ~/Downloads.",
+    file_not_found: "No backup file found at that path.",
+    import_failed: "Import failed — the file is not a valid backup.",
+};
+const describeBackupError = (messages: Record<string, string>, error?: string) =>
+    messages[error ?? ""] ?? `Operation failed${error ? ` (${error})` : ""} — check the logs.`;
 
 const ExportModalContent = ({ closeModal }: { closeModal?: () => void }) => {
     const [path, setPath] = useState(DEFAULT_BACKUP_PATH);
@@ -18,12 +39,12 @@ const ExportModalContent = ({ closeModal }: { closeModal?: () => void }) => {
 
         setStatus("Exporting...");
         try {
-            const success = await exportBackupToFileCall(path);
-            if (success) {
+            const r = await exportBackupToFileCall(path);
+            if (r.ok) {
                 setStatus("Success! Backup saved.");
                 setTimeout(() => closeModal?.(), 1500);
             } else {
-                setStatus("Error: Export failed. Check logs.");
+                setStatus(`Error: ${describeBackupError(EXPORT_ERROR_MESSAGES, r.error)}`);
             }
         } catch (e) {
             setStatus(`Error: ${e}`);
@@ -69,12 +90,12 @@ const ImportModalContent = ({ closeModal }: { closeModal?: () => void }) => {
 
         setStatus("Importing...");
         try {
-            const success = await importBackupFromFileCall(path);
-            if (success) {
+            const r = await importBackupFromFileCall(path);
+            if (r.ok) {
                 setStatus("Success! Configuration restored.");
                 setTimeout(() => closeModal?.(), 1500);
             } else {
-                setStatus("Error: Import failed. File not found or invalid.");
+                setStatus(`Error: ${describeBackupError(IMPORT_ERROR_MESSAGES, r.error)}`);
             }
         } catch (e) {
             setStatus(`Error: ${e}`);
