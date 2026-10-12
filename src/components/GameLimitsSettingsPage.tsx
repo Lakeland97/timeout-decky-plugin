@@ -37,6 +37,12 @@ export const GameLimitsSettingsPage = () => {
     const g = config.global;
     const setG = (patch: Partial<typeof g>) => updateConfig({ global: patch });
 
+    // Warn thresholds are persisted as a 2-element list [before-cap, at-cap]
+    // (default [5, 1]); guard the shape in case an older config predates it.
+    const thresholds = Array.isArray(g.warn_thresholds_minutes) ? g.warn_thresholds_minutes : [5, 1];
+    const warnBefore = typeof thresholds[0] === 'number' ? thresholds[0] : 5;
+    const warnAt = typeof thresholds[1] === 'number' ? thresholds[1] : 1;
+
     const addApp = () => {
         const id = newAppId.trim();
         if (!id) return;
@@ -153,6 +159,24 @@ export const GameLimitsSettingsPage = () => {
                                 value={g.time_cap_minutes}
                                 min={5} max={180} step={5}
                                 onChange={(v) => setG({ time_cap_minutes: v, half_open_cap_minutes: Math.max(1, Math.round(v / 2)) })}
+                            />
+                        </PanelSectionRow>
+                        <PanelSectionRow>
+                            <SliderField
+                                label="Warn before cap"
+                                description={`${warnBefore} min remaining`}
+                                value={warnBefore}
+                                min={0} max={30} step={1}
+                                onChange={(v) => setG({ warn_thresholds_minutes: [v, warnAt] })}
+                            />
+                        </PanelSectionRow>
+                        <PanelSectionRow>
+                            <SliderField
+                                label="Warn at cap"
+                                description={`${warnAt} min remaining`}
+                                value={warnAt}
+                                min={1} max={10} step={1}
+                                onChange={(v) => setG({ warn_thresholds_minutes: [warnBefore, v] })}
                             />
                         </PanelSectionRow>
                         <PanelSectionRow>
