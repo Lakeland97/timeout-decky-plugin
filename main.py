@@ -1591,6 +1591,7 @@ class Plugin:
             entry["five_min_finish_used"] = False
             entry["five_min_offered"] = False
             entry["adherent_today"] = False
+            entry["killed_on"] = None
             entry["killed"] = False
             entry["last_reset_date"] = today
         return entry
@@ -1605,9 +1606,24 @@ class Plugin:
             if us.get("game_limits_last_streak_date") == today:
                 return
             state = await self._get_game_limits_state()
-            any_adherent = any(e.get("adherent_today") for e in state.values())
             cur = us.get("game_limits_current_streak", 0)
-            cur = cur + 1 if any_adherent else 0
+            if any(e.get("adherent_today") for e in state.values()):
+                cur = cur + 1
+            else:
+                # D2 end-to-end: a day that ended in a verified cap/curfew kill is
+                # streak-neutral (no increment, no zero) — the user hit the limit
+                # fairly. Day-scoped on purpose: only a stamp from the day this
+                # rollover actually rolls over (yesterday — it runs lazily, so the
+                # day just ended is not "today") neutralizes. A stamp from any
+                # earlier day cannot vouch for the intervening missed days under a
+                # lazy multi-day rollover, and an active kill_failed runaway on the
+                # entry disqualifies it. Idle days and runaway days keep the
+                # pre-existing zero.
+                yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+                fair_kill = any(e.get("killed_on") == yesterday and not e.get("kill_failed")
+                                for e in state.values())
+                if not fair_kill:
+                    cur = 0
             us["game_limits_current_streak"] = cur
             if cur > us.get("game_limits_longest_streak", 0):
                 us["game_limits_longest_streak"] = cur
@@ -1882,8 +1898,12 @@ class Plugin:
             if await self._terminate_game(appid):
                 # Verified kill: session over. Per spec (trip: "streak unaffected
                 # by a cap/curfew kill — the user hit the limit fairly") this does
-                # NOT break the streak: no streak-break call here.
+                # NOT break the streak: no streak-break call here. The killed_on
+                # stamp lets the next rollover treat this day as streak-neutral
+                # even though the killed session never reaches report (session
+                # cleared below -> early return -> adherence stays False).
                 entry["killed"] = True
+                entry["killed_on"] = datetime.now().strftime("%Y-%m-%d")
                 entry["session_start"] = None
                 entry["session_cap_end"] = None
                 entry["in_grace"] = False
