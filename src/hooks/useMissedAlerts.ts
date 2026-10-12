@@ -16,7 +16,7 @@ export function useMissedAlerts() {
         const fetchMissed = async () => {
             try {
                 const items = await getMissedItems();
-                if (items) {
+                if (Array.isArray(items)) {
                     setMissedItems(items);
                 }
             } catch (e) {
@@ -27,7 +27,7 @@ export function useMissedAlerts() {
         fetchMissed();
 
         const handleMissedUpdate = (items: MissedItem[]) => {
-            setMissedItems(items || []);
+            setMissedItems(Array.isArray(items) ? items : []);
         };
 
         addEventListener('timeout_missed_items_updated', handleMissedUpdate);

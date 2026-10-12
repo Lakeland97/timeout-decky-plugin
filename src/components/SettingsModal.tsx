@@ -131,7 +131,9 @@ const FocusSettingsPage = () => {
     const [sounds, setSounds] = useState<SoundFile[]>([{ filename: 'alarm.mp3', name: 'Alarm' }]);
 
     useEffect(() => {
-        getSounds().then(setSounds);
+        getSounds()
+            .then(setSounds)
+            .catch((e) => console.error("[Timeout] getSounds failed:", e));
     }, []);
 
     return (
