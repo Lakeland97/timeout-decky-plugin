@@ -12,7 +12,7 @@ export type GameLimitsConfigUpdate = {
 };
 
 // Raw callables (used by the index.tsx game listener + modals, which live outside React hooks)
-export const reportGameStarted = callable<[app_id: string, app_name: string], GameLaunchDecision>('report_game_session_started');
+export const reportGameStarted = callable<[app_id: string, app_name: string, decision?: 'cancel'], GameLaunchDecision>('report_game_session_started');
 export const reportGameStopped = callable<[app_id: string], boolean>('report_game_session_stopped');
 export const chooseLaunch = callable<[app_id: string, choice: GameLaunchMode], { appid: string; mode: GameLaunchMode; cap_end: number | null } | { error: string }>('choose_launch');
 export const useFiveMinFinish = callable<[app_id: string], boolean>('use_five_min_finish');

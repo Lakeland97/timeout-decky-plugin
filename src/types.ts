@@ -201,10 +201,14 @@ export type GameLaunchMode = 'full' | 'half';
 
 export interface GameLaunchDecision {
     limited: boolean;
-    blocked?: 'cooldown' | 'curfew' | 'no_credits';
+    blocked?: 'cooldown' | 'curfew' | 'no_credits' | 'focus_hard';
     mode?: 'choose';
     appid?: string;
     app_name?: string;
+    // Set on blocked/cancelled launches: whether the backend's verified-kill
+    // actually stopped the running game (false = could not be stopped).
+    terminated?: boolean;
+    cancelled?: boolean;
 }
 
 export interface GameSessionStartedEvent {
@@ -255,7 +259,7 @@ export interface MindfulnessEffective {
 
 export interface ParentalControls {
     enabled: boolean;
-    passcode: string;   // plaintext STUB — not real auth; revisit before release
+    passcode: string;   // salted SHA-256 hash (D3) — household-grade, not real auth
     mode: ParentalMode;
     locked_features: ParentalLockedFeature[];
 }

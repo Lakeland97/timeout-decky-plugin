@@ -15,6 +15,7 @@ import fcntl
 import struct
 import tempfile
 import copy
+import hashlib
 import shutil
 
 
@@ -65,6 +66,17 @@ except Exception:
 # backup). asyncio.Lock is NOT reentrant: never acquire it inside a section that already
 # holds it; helpers documented "caller must hold SETTINGS_LOCK" run inside a holder.
 SETTINGS_LOCK = asyncio.Lock()
+
+# Salted SHA-256 passcode hashing (Decision D3). Stored passcodes are always
+# 64-char lowercase hex digests; the per-install salt lives in
+# parental_controls.passcode_salt (generated on the first passcode set).
+# Household-grade friction — deliberately NOT account-grade auth.
+_PASSCODE_HASH_RE = re.compile(r"\A[0-9a-f]{64}\Z")
+
+
+def _hash_passcode(passcode: str, salt: str) -> str:
+    """Salted SHA-256 hash of a parental passcode (D3)."""
+    return hashlib.sha256((salt + str(passcode)).encode()).hexdigest()
 
 # Settings keys
 SETTINGS_KEY_SETTINGS = "user_settings"
@@ -143,10 +155,12 @@ DEFAULT_SETTINGS = {
     # Focus enforcement tiers (sub-project C)
     "focus_default_tier": "soft",  # "soft" | "medium" | "hard"
     "focus_take_a_break_max_per_session": 1,
-    # Parental controls (sub-project D) — stub, NOT real auth
+    # Parental controls (sub-project D) — salted SHA-256 passcode hash (D3):
+    # household-grade friction, not account-grade auth.
     "parental_controls": {
         "enabled": False,
-        "passcode": "",  # plaintext STUB — NOT real auth; revisit before any release
+        "passcode": "",  # salted SHA-256 hex digest (see _hash_passcode) — household-grade, not real auth
+        "passcode_salt": "",  # per-install salt, generated on first passcode set
         "mode": "self",  # "self" (locked) | "admin" (unlocked)
         "locked_features": ["game_limits", "focus_tier", "take_a_break", "mindfulness"]
     },
@@ -1474,6 +1488,49 @@ class Plugin:
     async def _save_game_limits_state(self, state: dict):
         await self.settings_setSetting(SETTINGS_KEY_GAME_LIMITS, state)
 
+    async def _emit_game_state(self) -> None:
+        """Push the full game-limits state to the frontend. The
+        'timeout_game_state' handler in useGameLimits.ts expects
+        GameLimitsState — a Record keyed by appid — so the payload is the
+        complete state, never a delta.
+
+        Lock-free: _get_game_limits_state reads the blob directly, so callers
+        may hold SETTINGS_LOCK."""
+        await decky.emit("timeout_game_state", await self._get_game_limits_state())
+
+    async def _terminate_and_report(self, app_id: str, reason: str) -> bool:
+        """Verified-kill a game and emit the outcome events. Returns True only
+        when the kill was verified (same semantics as _terminate_game).
+
+        Caller must hold SETTINGS_LOCK; _terminate_game never acquires it (its
+        verification sleeps extend the caller's hold but cannot nest it)."""
+        ok = await self._terminate_game(app_id)
+        if ok:
+            await decky.emit("timeout_game_terminated", {"appid": app_id, "reason": reason})
+        else:
+            await decky.emit("timeout_game_terminate_failed", {"appid": app_id, "reason": reason})
+        await self._emit_game_state()
+        return ok
+
+    async def _block_launch(self, app_id: str, app_name: str, reason: str) -> dict:
+        """Blocked-launch outcome: a blocked launch must not leave the game
+        running — terminate it via the verified-kill path and return the
+        decision payload (`terminated` carries the kill verdict).
+
+        Caller must hold SETTINGS_LOCK."""
+        ok = await self._terminate_and_report(app_id, reason)
+        return {"limited": True, "blocked": reason, "appid": app_id,
+                "app_name": app_name, "terminated": ok}
+
+    async def _cancel_launch(self, app_id: str, app_name: str) -> dict:
+        """Decision D1: Cancel on the launch menu terminates the game through
+        the same verified-kill path as blocked launches.
+
+        Caller must hold SETTINGS_LOCK."""
+        ok = await self._terminate_and_report(app_id, "user_cancel")
+        return {"limited": False, "cancelled": True, "appid": app_id,
+                "app_name": app_name, "terminated": ok}
+
     async def _get_game_limits_config(self) -> dict:
         us = await self._get_user_settings()
         cfg = us.get("game_limits_config", DEFAULT_SETTINGS["game_limits_config"])
@@ -1729,13 +1786,19 @@ class Plugin:
         decky.logger.info(f"Timeout: verification stage: appid={appid} processes gone")
         return True
 
-    async def report_game_session_started(self, app_id: str, app_name: str = "") -> dict:
-        """Frontend game-start hook. Returns a launch decision."""
+    async def report_game_session_started(self, app_id: str, app_name: str = "", decision: str = "") -> dict:
+        """Frontend game-start hook. Returns a launch decision.
+
+        decision="cancel" implements Decision D1: Cancel on the launch menu
+        terminates the running game via the same verified-kill path as blocked
+        launches (no unlimited play from an un-terminated launch)."""
         # Streak rollover is its own self-locking read-modify-write; the launch
         # decision below is a separate critical section on purpose — report must
         # not hold SETTINGS_LOCK while calling into the self-locking helper.
         await self._daily_rollover_check()
         async with SETTINGS_LOCK:
+            if decision == "cancel":
+                return await self._cancel_launch(app_id, app_name)
             # Focus enforcement tier (sub-project C) - checked before game limits.
             focus = await self._get_focus_state()
             # Expired-but-active counts as inactive: only a live phase enforces tiers.
@@ -1745,12 +1808,7 @@ class Plugin:
                 ftier = focus.get("tier", "soft")
                 if ftier == "hard":
                     # Hard focus: terminate the game immediately.
-                    ok = await self._terminate_game(app_id)
-                    if ok:
-                        await decky.emit("timeout_game_terminated", {"appid": app_id, "reason": "focus_hard"})
-                    else:
-                        await decky.emit("timeout_game_terminate_failed", {"appid": app_id, "reason": "focus_hard"})
-                    return {"limited": True, "blocked": "focus_hard", "appid": app_id, "app_name": app_name}
+                    return await self._block_launch(app_id, app_name, "focus_hard")
                 if ftier == "medium":
                     # Medium focus: warn but allow the launch.
                     await decky.emit("timeout_game_warning", {"appid": app_id, "reason": "focus_medium", "message": "Focus session active"})
@@ -1766,14 +1824,14 @@ class Plugin:
             now = time.time()
             if rule.get("cooldown_enabled") and entry.get("cooldown_until") and now < entry["cooldown_until"]:
                 state[app_id] = entry; await self._save_game_limits_state(state)
-                return {"limited": True, "blocked": "cooldown", "appid": app_id, "app_name": app_name}
+                return await self._block_launch(app_id, app_name, "cooldown")
             if rule.get("curfew_enabled") and self._now_in_curfew(rule) and not (rule.get("opens_enabled") and rule.get("opens_bypass_curfew")):
                 state[app_id] = entry; await self._save_game_limits_state(state)
-                return {"limited": True, "blocked": "curfew", "appid": app_id, "app_name": app_name}
+                return await self._block_launch(app_id, app_name, "curfew")
             opens_outside_window = rule.get("opens_window_enabled") and not self._now_in_window(rule.get("opens_window_start", "00:00"), rule.get("opens_window_end", "00:00"))
             if rule.get("opens_enabled") and not opens_outside_window and entry.get("credits_remaining", 0) < 1:
                 state[app_id] = entry; await self._save_game_limits_state(state)
-                return {"limited": True, "blocked": "no_credits", "appid": app_id, "app_name": app_name}
+                return await self._block_launch(app_id, app_name, "no_credits")
             state[app_id] = entry; await self._save_game_limits_state(state)
             return {"limited": True, "mode": "choose", "appid": app_id, "app_name": app_name}
 
@@ -2123,11 +2181,37 @@ class Plugin:
         return await self._get_user_settings()
 
     async def update_settings(self, new_settings: dict) -> dict:
-        """Update user settings."""
+        """Update user settings.
+
+        Parental gate: protected keys (see _is_protected_setting_key) are
+        dropped from the merge while the parental lock is active for their
+        domain, so this generic RPC cannot bypass the dedicated gated setters.
+        The merged blob is always re-sanitized before persisting.
+        """
+        if not isinstance(new_settings, dict):
+            new_settings = {}
         async with SETTINGS_LOCK:
             current = await self._get_user_settings()
-            current.update(new_settings)
-            await self.settings_setSetting(SETTINGS_KEY_SETTINGS, current)
+            accepted: dict = {}
+            dropped: list = []
+            for key, value in new_settings.items():
+                if await self._is_protected_setting_key(key):
+                    dropped.append(key)
+                else:
+                    accepted[key] = value
+            if dropped:
+                decky.logger.info(f"Timeout: update_settings dropped parental-protected keys: {dropped}")
+            if isinstance(accepted.get("parental_controls"), dict):
+                # Stored-passcode invariant on this write path too: anything
+                # landing in parental_controls.passcode is a salted SHA-256
+                # hash (D3), never plaintext.
+                accepted["parental_controls"] = self._normalize_parental_block(
+                    current.get("parental_controls", DEFAULT_SETTINGS["parental_controls"]),
+                    accepted["parental_controls"])
+            if accepted:
+                current.update(accepted)
+                current = self._sanitize_user_settings(current)
+                await self.settings_setSetting(SETTINGS_KEY_SETTINGS, current)
 
         # Update sleep inhibitor if prevent_sleep settings changed
         if any(k in new_settings for k in ("focus_prevent_sleep",)):
@@ -2143,7 +2227,44 @@ class Plugin:
 
 
     # ---------------- Parental controls (sub-project D) ----------------
-    # NOTE: passcode is a plaintext STUB — not real authentication. Revisit before release.
+    # NOTE: the passcode is stored as a salted SHA-256 hash (Decision D3) —
+    # household-grade friction, not real authentication.
+
+    async def _is_protected_setting_key(self, key: str) -> bool:
+        """True when `key` is a protected (parental-gated) settings key AND the
+        parental lock is currently active for its domain.
+
+        Protected: parental_controls (locked while enabled in self mode — the
+        same condition update_parental_controls enforces), game_limits_config /
+        mindfulness / focus_default_tier (locked while the corresponding
+        feature is in locked_features, via _parental_locked).
+
+        Lock-free: only reads through _get_user_settings/_parental_locked, so
+        callers may hold SETTINGS_LOCK."""
+        if key == "parental_controls":
+            pc = (await self._get_user_settings()).get("parental_controls", {})
+            return bool(pc.get("enabled")) and pc.get("mode") == "self"
+        feature = {"game_limits_config": "game_limits",
+                   "mindfulness": "mindfulness",
+                   "focus_default_tier": "focus_tier"}.get(key)
+        if feature is None:
+            return False
+        return await self._parental_locked(feature)
+
+    def _normalize_parental_block(self, current_pc: dict, incoming: dict) -> dict:
+        """Copy of `incoming` with the stored-passcode invariant enforced: a
+        non-empty passcode is stored as a salted SHA-256 hash, with a
+        per-install salt generated on first set. Other sub-keys pass through."""
+        pc = json.loads(json.dumps(incoming))
+        if "passcode" in pc:
+            plaintext = str(pc.get("passcode") or "")
+            if plaintext:
+                salt = str(current_pc.get("passcode_salt") or "") or uuid.uuid4().hex
+                pc["passcode_salt"] = salt
+                pc["passcode"] = _hash_passcode(plaintext, salt)
+            else:
+                pc["passcode"] = ""
+        return pc
 
     async def _parental_locked(self, feature: str) -> bool:
         pc = (await self._get_user_settings()).get("parental_controls", {})
@@ -2164,7 +2285,15 @@ class Plugin:
             if "enabled" in partial:
                 pc["enabled"] = bool(partial["enabled"])
             if "passcode" in partial:
-                pc["passcode"] = str(partial["passcode"] or "")
+                plaintext = str(partial["passcode"] or "")
+                if plaintext:
+                    # D3: store only the salted SHA-256 hash; the per-install
+                    # salt is generated on the first set and then reused.
+                    salt = str(pc.get("passcode_salt") or "") or uuid.uuid4().hex
+                    pc["passcode_salt"] = salt
+                    pc["passcode"] = _hash_passcode(plaintext, salt)
+                else:
+                    pc["passcode"] = ""
             if "locked_features" in partial:
                 pc["locked_features"] = list(partial["locked_features"])
             if "mode" in partial:
@@ -2175,19 +2304,28 @@ class Plugin:
         return pc
 
     async def verify_parental_passcode(self, code: str) -> dict:
+        """Locked RPC wrapper — self-acquires SETTINGS_LOCK. In-lock callers
+        must call _verify_parental_passcode_impl instead (SETTINGS_LOCK is NOT
+        reentrant: nesting it deadlocks)."""
         async with SETTINGS_LOCK:
-            us = await self._get_user_settings()
-            pc = us.get("parental_controls", DEFAULT_SETTINGS["parental_controls"])
-            if not pc.get("enabled"):
-                return {"ok": True, "controls": pc}
-            if pc.get("passcode") and str(code) == str(pc.get("passcode")):
-                pc2 = json.loads(json.dumps(pc))
-                pc2["mode"] = "admin"
-                us["parental_controls"] = pc2
-                await self.settings_setSetting(SETTINGS_KEY_SETTINGS, us)
-                await decky.emit("timeout_settings_updated", us)
-                return {"ok": True, "controls": pc2}
-            return {"ok": False}
+            return await self._verify_parental_passcode_impl(code)
+
+    async def _verify_parental_passcode_impl(self, code: str) -> dict:
+        """Lock-free impl — caller must hold SETTINGS_LOCK. Compares the salted
+        SHA-256 hash (D3); on success flips mode to admin and persists."""
+        us = await self._get_user_settings()
+        pc = us.get("parental_controls", DEFAULT_SETTINGS["parental_controls"])
+        if not pc.get("enabled"):
+            return {"ok": True, "controls": pc}
+        stored = str(pc.get("passcode") or "")
+        if stored and _hash_passcode(code, str(pc.get("passcode_salt") or "")) == stored:
+            pc2 = json.loads(json.dumps(pc))
+            pc2["mode"] = "admin"
+            us["parental_controls"] = pc2
+            await self.settings_setSetting(SETTINGS_KEY_SETTINGS, us)
+            await decky.emit("timeout_settings_updated", us)
+            return {"ok": True, "controls": pc2}
+        return {"ok": False}
 
     async def lock_parental(self) -> bool:
         async with SETTINGS_LOCK:
@@ -2378,11 +2516,23 @@ class Plugin:
                 
                 
             if "user_settings" in data:
+                # Parental gate: an import must not be a bypass — any protected
+                # key the current parental lock would reject from
+                # update_settings keeps its CURRENT value instead of being
+                # overwritten (or reset to defaults) by the imported blob.
+                # Lock-free checks, run before acquiring the lock.
+                imported = dict(data["user_settings"])
+                _dropped = [k for k in imported if await self._is_protected_setting_key(k)]
+                if _dropped:
+                    _current = await self._get_user_settings()
+                    for k in _dropped:
+                        imported[k] = copy.deepcopy(_current.get(k, DEFAULT_SETTINGS[k]))
+                    decky.logger.info(f"Timeout: import_backup kept current values for parental-protected keys: {_dropped}")
                 # Merge with defaults to ensure new settings exist
                 async with SETTINGS_LOCK:
                     # Pre-import snapshot so a bad import is reversible
                     await self._backup_settings_file()
-                    settings_to_save = {**DEFAULT_SETTINGS, **data["user_settings"]}
+                    settings_to_save = {**DEFAULT_SETTINGS, **imported}
                     await self.settings_setSetting(SETTINGS_KEY_SETTINGS, settings_to_save)
                 await decky.emit("timeout_settings_updated", settings_to_save)
             
@@ -2671,6 +2821,27 @@ class Plugin:
                     updated[_new_key] = DEFAULT_SETTINGS[_new_key]
                     changed = True
 
+            # --- v3: hash any plaintext passcode (Decision D3, idempotent) ---
+            # Converts a non-empty stored passcode that is NOT already a
+            # 64-char lowercase hex digest: generate the per-install salt,
+            # hash, replace, log. Already-hex values are left untouched, so a
+            # second run is a no-op. Accepted limitation (documented): a legacy
+            # plaintext passcode that happened to BE 64 hex chars is
+            # indistinguishable from a hash and is not converted.
+            _pc_block = updated.get("parental_controls")
+            if isinstance(_pc_block, dict):
+                _stored_pc = _pc_block.get("passcode")
+                if not isinstance(_stored_pc, str):
+                    _stored_pc = "" if _stored_pc is None else str(_stored_pc)
+                if _stored_pc and not _PASSCODE_HASH_RE.match(_stored_pc):
+                    _salt = str(_pc_block.get("passcode_salt") or "") or uuid.uuid4().hex
+                    _pc_block = json.loads(json.dumps(_pc_block))
+                    _pc_block["passcode_salt"] = _salt
+                    _pc_block["passcode"] = _hash_passcode(_stored_pc, _salt)
+                    updated["parental_controls"] = _pc_block
+                    changed = True
+                    decky.logger.info("Timeout: Hashed stored parental passcode (D3 migration)")
+
             if changed:
                 await self.settings_setSetting(SETTINGS_KEY_SETTINGS, updated)
                 decky.logger.info("Timeout: Migrated overlay settings schema")
@@ -2929,6 +3100,11 @@ class Plugin:
 
     async def factory_reset(self) -> bool:
         """Factory reset - restore all settings to defaults and clear all data."""
+        # Parental gate: a factory reset would wipe the parental lock itself
+        # (and every limit) — refuse while locked. Unlock (admin) first.
+        if await self._is_protected_setting_key("parental_controls"):
+            decky.logger.warning("Timeout: factory_reset refused while parental controls are locked")
+            return False
         try:
             decky.logger.info("Timeout: Starting factory reset...")
             

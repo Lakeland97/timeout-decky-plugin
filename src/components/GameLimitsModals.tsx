@@ -1,7 +1,7 @@
 import { ConfirmModal, showModal, Focusable } from "@decky/ui";
 import { toaster } from "@decky/api";
 import { FaPlay } from "react-icons/fa";
-import { chooseLaunch, useFiveMinFinish } from "../hooks/useGameLimits";
+import { chooseLaunch, useFiveMinFinish, reportGameStarted } from "../hooks/useGameLimits";
 
 // Launch-time menu: choose Full / Half / Cancel when a limited game starts.
 export function showLaunchMenu(appId: string, appName: string) {
@@ -23,6 +23,20 @@ const LaunchMenuModal = ({ appId, appName, closeModal }: {
         }
         closeModal?.();
     };
+    // Decision D1: Cancel terminates the game through the same verified-kill
+    // path as blocked launches — cancelling must not leave it running free.
+    const cancel = async () => {
+        try {
+            const r = await reportGameStarted(appId, appName, 'cancel');
+            showGameToast('Game Limits', r.terminated
+                ? `${label} cancelled — game stopped.`
+                : `${label} cancelled — could not be stopped; close it manually.`);
+        } catch (e) {
+            console.error('[Timeout] cancel launch failed:', e);
+            toaster.toast({ title: 'Game Limits', body: `Could not stop ${label} — close it manually.` });
+        }
+        closeModal?.();
+    };
     return (
         <ConfirmModal
             strTitle="Game Limits"
@@ -30,7 +44,7 @@ const LaunchMenuModal = ({ appId, appName, closeModal }: {
             strOKButtonText="Start Full"
             strCancelButtonText="Cancel"
             onOK={() => start('full')}
-            onCancel={() => closeModal?.()}
+            onCancel={cancel}
         >
             <Focusable
                 onActivate={() => start('half')}

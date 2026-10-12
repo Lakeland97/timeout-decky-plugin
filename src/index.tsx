@@ -450,7 +450,11 @@ export default definePlugin(() => {
                             if (decision.limited && decision.mode === "choose") {
                                 showLaunchMenu(decision.appid || appId, decision.app_name || "");
                             } else if (decision.limited && decision.blocked) {
-                                showGameToast("Game Limits", `${appId} blocked: ${decision.blocked}`);
+                                // Backend terminated the blocked launch when it could;
+                                // otherwise tell the user to close it themselves.
+                                showGameToast("Game Limits", decision.terminated
+                                    ? `${appId} blocked (${decision.blocked})`
+                                    : `${appId} blocked (${decision.blocked}) — could not be stopped, close it manually`);
                             }
                         }).catch((e) => console.error("[Timeout] reportGameStarted failed:", e));
                     });
