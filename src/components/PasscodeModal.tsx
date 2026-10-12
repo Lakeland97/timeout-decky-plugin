@@ -4,7 +4,8 @@ import { verifyParentalCall } from "../hooks/useParentalControls";
 import { showMindfulnessPause } from "./MindfulnessPauseModal";
 
 // Prompt for the parental passcode; on success call onUnlocked.
-// NOTE: passcode compare is a plaintext STUB — not real auth.
+// NOTE: passcode compare is server-side against a salted SHA-256 hash (D3) —
+// household-grade, not real auth. The typed code crosses the local RPC as-is.
 export function showUnlockModal(onUnlocked?: () => void) {
     // Fire the mindfulness pause (parental_unlock trigger) before the passcode modal.
     showMindfulnessPause('parental_unlock', () => showModal(<UnlockModal onUnlocked={onUnlocked} />));

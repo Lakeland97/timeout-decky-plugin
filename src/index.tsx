@@ -31,7 +31,7 @@ import { useSleepInhibitor } from "./hooks/useSleepInhibitor";
 import { useFocus } from "./hooks/useFocus";
 import { useMissedAlerts } from "./hooks/useMissedAlerts";
 import { reportGameStarted, reportGameStopped } from "./hooks/useGameLimits";
-import { showLaunchMenu, showFiveMinFinishPrompt, showGameToast } from "./components/GameLimitsModals";
+import { showLaunchMenu, showFiveMinFinishPrompt, showGameToast, showBlockedLaunchToast } from "./components/GameLimitsModals";
 import { MODAL_ZINDEX_CSS } from "./utils/zIndex";
 
 // Types
@@ -403,12 +403,13 @@ export default definePlugin(() => {
     addEventListener('timeout_focus_break_ended', handleFocusBreakEnded);
 
     // Missed items toast
-    addEventListener('timeout_missed_items_toast', (count: number) => {
+    const handleMissedItemsToast = (count: number) => {
         toaster.toast({
             title: "Timeout",
             body: `You missed ${count} alert${count !== 1 ? 's' : ''} while away.`
         });
-    });
+    };
+    addEventListener('timeout_missed_items_toast', handleMissedItemsToast);
 
     // Game Limits event handlers
     const handleGameWarning = (e: { appid: string; reason: string; grace_remaining?: number }) => {
@@ -437,31 +438,37 @@ export default definePlugin(() => {
     try {
         if (SteamClient?.GameSessions?.RegisterForAppLifetimeNotifications) {
             unregisterGameListener = SteamClient.GameSessions.RegisterForAppLifetimeNotifications((update: any) => {
-                if (!update.unAppID) return;
+                try {
+                    if (!update.unAppID) return;
 
-                const appId = String(update.unAppID);
+                    const appId = String(update.unAppID);
 
-                if (update.bRunning) {
-                    // Game start
-                    runningAppIds.add(appId);
-                    setGameRunning(true);
-                    showMindfulnessPause('game_launch', () => {
-                        reportGameStarted(appId, "").then((decision) => {
-                            if (decision.limited && decision.mode === "choose") {
-                                showLaunchMenu(decision.appid || appId, decision.app_name || "");
-                            } else if (decision.limited && decision.blocked) {
-                                showGameToast("Game Limits", `${appId} blocked: ${decision.blocked}`);
-                            }
-                        }).catch((e) => console.error("[Timeout] reportGameStarted failed:", e));
-                    });
-                    console.log(`[Timeout] App ${appId} started. Running apps: ${runningAppIds.size}`);
-                } else {
-                    // Game end
-                    runningAppIds.delete(appId);
-                    const isAnyGameRunning = runningAppIds.size > 0;
-                    setGameRunning(isAnyGameRunning);
-                    reportGameStopped(appId).catch((e) => console.error("[Timeout] reportGameStopped failed:", e));
-                    console.log(`[Timeout] App ${appId} ended. Running apps: ${runningAppIds.size}`);
+                    if (update.bRunning) {
+                        // Game start
+                        runningAppIds.add(appId);
+                        setGameRunning(true);
+                        showMindfulnessPause('game_launch', () => {
+                            reportGameStarted(appId, "").then((decision) => {
+                                if (decision.limited && decision.mode === "choose") {
+                                    showLaunchMenu(decision.appid || appId, decision.app_name || "");
+                                } else if (decision.limited && decision.blocked) {
+                                    // Backend terminated the blocked launch when it could;
+                                    // otherwise tell the user to close it themselves.
+                                    showBlockedLaunchToast(appId, decision);
+                                }
+                            }).catch((e) => console.error("[Timeout] reportGameStarted failed:", e));
+                        });
+                        console.log(`[Timeout] App ${appId} started. Running apps: ${runningAppIds.size}`);
+                    } else {
+                        // Game end
+                        runningAppIds.delete(appId);
+                        const isAnyGameRunning = runningAppIds.size > 0;
+                        setGameRunning(isAnyGameRunning);
+                        reportGameStopped(appId).catch((e) => console.error("[Timeout] reportGameStopped failed:", e));
+                        console.log(`[Timeout] App ${appId} ended. Running apps: ${runningAppIds.size}`);
+                    }
+                } catch (e) {
+                    console.error("[Timeout] App lifetime callback failed:", e);
                 }
             });
         }
@@ -502,26 +509,51 @@ export default definePlugin(() => {
         alwaysRender: true, // Keep plugin state active for overlay visibility
 
         onDismount: () => {
-            removeEventListener('timeout_focus_work_ended', handleFocusWorkEnded);
-            removeEventListener('timeout_focus_break_ended', handleFocusBreakEnded);
-            removeEventListener("timeout_game_warning", handleGameWarning);
-            removeEventListener("timeout_game_five_min_available", handleGameFiveMin);
-            removeEventListener("timeout_game_terminated", handleGameTerminated);
-            removeEventListener("timeout_game_terminate_failed", handleGameTerminateFailed);
+            try {
+                removeEventListener('timeout_focus_work_ended', handleFocusWorkEnded);
+                removeEventListener('timeout_focus_break_ended', handleFocusBreakEnded);
+                removeEventListener('timeout_missed_items_toast', handleMissedItemsToast);
+                removeEventListener("timeout_game_warning", handleGameWarning);
+                removeEventListener("timeout_game_five_min_available", handleGameFiveMin);
+                removeEventListener("timeout_game_terminated", handleGameTerminated);
+                removeEventListener("timeout_game_terminate_failed", handleGameTerminateFailed);
+            } catch (e) {
+                console.error("[Timeout] onDismount: failed to remove event listeners", e);
+            }
             // Unregister settings route and overlay
-            routerHook.removeRoute(SETTINGS_ROUTE);
-            routerHook.removeGlobalComponent(OVERLAY_COMPONENT_NAME);
-            routerHook.removeGlobalComponent(COMPOSITION_COMPONENT_NAME);
-            if (unregisterGameListener) {
-                if (typeof unregisterGameListener === 'function') {
-                    unregisterGameListener();
-                } else if (unregisterGameListener.unregister) {
-                    unregisterGameListener.unregister();
+            try {
+                routerHook.removeRoute(SETTINGS_ROUTE);
+            } catch (e) {
+                console.error("[Timeout] onDismount: failed to remove settings route", e);
+            }
+            try {
+                routerHook.removeGlobalComponent(OVERLAY_COMPONENT_NAME);
+            } catch (e) {
+                console.error("[Timeout] onDismount: failed to remove overlay component", e);
+            }
+            try {
+                routerHook.removeGlobalComponent(COMPOSITION_COMPONENT_NAME);
+            } catch (e) {
+                console.error("[Timeout] onDismount: failed to remove UI composition component", e);
+            }
+            try {
+                if (unregisterGameListener) {
+                    if (typeof unregisterGameListener === 'function') {
+                        unregisterGameListener();
+                    } else if (unregisterGameListener.unregister) {
+                        unregisterGameListener.unregister();
+                    }
                 }
+            } catch (e) {
+                console.error("[Timeout] onDismount: failed to unregister game listener", e);
             }
             // Clean up injected modal style
-            const modalStyle = document.getElementById(modalStyleId);
-            if (modalStyle) modalStyle.remove();
+            try {
+                const modalStyle = document.getElementById(modalStyleId);
+                if (modalStyle) modalStyle.remove();
+            } catch (e) {
+                console.error("[Timeout] onDismount: failed to remove injected modal style", e);
+            }
         }
     };
 });

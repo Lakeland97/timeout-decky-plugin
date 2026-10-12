@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { addEventListener, removeEventListener, callable } from '@decky/api';
+import { addEventListener, removeEventListener, callable, toaster } from '@decky/api';
 import type { UserSettings } from '../types';
 
 // Backend callables
@@ -73,6 +73,7 @@ export function useSettings() {
             setSettings(updatedSettings);
         } catch (e) {
             console.error('Failed to update setting:', e);
+            toaster.toast({ title: "Timeout", body: "Settings failed to save — see logs" });
         }
     }, []);
 
@@ -83,6 +84,7 @@ export function useSettings() {
             setSettings(updatedSettings);
         } catch (e) {
             console.error('Failed to update settings:', e);
+            toaster.toast({ title: "Timeout", body: "Settings failed to save — see logs" });
         }
     }, []);
 
@@ -92,13 +94,20 @@ export function useSettings() {
             setSettings(updatedSettings);
         };
 
+        // Backup import: refetch settings through the initial load path.
+        const handleDataImported = () => {
+            loadData();
+        };
+
         addEventListener('timeout_settings_updated', handleSettingsUpdated);
+        addEventListener('timeout_data_imported', handleDataImported);
 
         // Load initial data
         loadData();
 
         return () => {
             removeEventListener('timeout_settings_updated', handleSettingsUpdated);
+            removeEventListener('timeout_data_imported', handleDataImported);
         };
     }, [loadData]);
 

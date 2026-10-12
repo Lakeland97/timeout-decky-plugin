@@ -12,9 +12,9 @@ export type GameLimitsConfigUpdate = {
 };
 
 // Raw callables (used by the index.tsx game listener + modals, which live outside React hooks)
-export const reportGameStarted = callable<[app_id: string, app_name: string], GameLaunchDecision>('report_game_session_started');
+export const reportGameStarted = callable<[app_id: string, app_name: string, decision?: 'cancel'], GameLaunchDecision>('report_game_session_started');
 export const reportGameStopped = callable<[app_id: string], boolean>('report_game_session_stopped');
-export const chooseLaunch = callable<[app_id: string, choice: GameLaunchMode], { appid: string; mode: GameLaunchMode; cap_end: number | null } | { error: string }>('choose_launch');
+export const chooseLaunch = callable<[app_id: string, choice: GameLaunchMode], { appid: string; mode: GameLaunchMode; cap_end: number | null } | { error: string } | GameLaunchDecision>('choose_launch');
 export const useFiveMinFinish = callable<[app_id: string], boolean>('use_five_min_finish');
 export const getInstalledGames = callable<[], { appid: string; name: string }[]>('get_installed_games');
 
@@ -44,13 +44,17 @@ export function useGameLimits() {
         const onSettings = () => { getConfigCall().then(setConfig).catch(() => {}); };
         const onState = (s: GameLimitsState) => setState(s);
         const onStreak = (s: { current: number; longest: number }) => setStreak(s);
+        // Backup import: refetch config + state through the initial load path.
+        const onDataImported = () => { load(); };
         addEventListener('timeout_settings_updated', onSettings);
         addEventListener('timeout_game_state', onState);
         addEventListener('timeout_game_streak', onStreak);
+        addEventListener('timeout_data_imported', onDataImported);
         return () => {
             removeEventListener('timeout_settings_updated', onSettings);
             removeEventListener('timeout_game_state', onState);
             removeEventListener('timeout_game_streak', onStreak);
+            removeEventListener('timeout_data_imported', onDataImported);
         };
     }, [load]);
 

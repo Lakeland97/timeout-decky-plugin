@@ -4,12 +4,12 @@ import {
     PanelSection,
     PanelSectionRow,
     SliderField,
+    TextField,
     ToggleField,
     ButtonItem
 } from "@decky/ui";
-import { toaster } from "@decky/api";
 import { FaGamepad, FaPlus, FaTrash, FaClock } from "react-icons/fa";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useGameLimits } from "../hooks/useGameLimits";
 import type { GameLimitsMode } from "../types";
 
@@ -25,10 +25,46 @@ const hhmmToHour = (s: string): number => {
     return m ? Math.min(23, Math.max(0, parseInt(m[1], 10))) : 0;
 };
 
+// Weekday keys must match the backend's datetime.now().strftime("%a")
+// comparison in _now_in_curfew (main.py) — "Mon".."Sun".
+const WEEK_DAYS = [
+    { key: 'Mon', label: 'Monday' },
+    { key: 'Tue', label: 'Tuesday' },
+    { key: 'Wed', label: 'Wednesday' },
+    { key: 'Thu', label: 'Thursday' },
+    { key: 'Fri', label: 'Friday' },
+    { key: 'Sat', label: 'Saturday' },
+    { key: 'Sun', label: 'Sunday' }
+];
+const ALL_WEEK_DAYS = WEEK_DAYS.map((d) => d.key);
+
 export const GameLimitsSettingsPage = () => {
     const { config, state, streak, updateConfig, resetStreak, getInstalledGames } = useGameLimits();
     const [newAppId, setNewAppId] = useState('');
     const [newAppName, setNewAppName] = useState('');
+    const [installedGames, setInstalledGames] = useState<{ appid: string; name: string }[] | null>(null);
+    const [gamesStatus, setGamesStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+    const [gamesQuery, setGamesQuery] = useState('');
+    const [gamesReload, setGamesReload] = useState(0);
+
+    // Load the installed-games picker once on mount; the counter re-runs it for Retry.
+    useEffect(() => {
+        let cancelled = false;
+        setGamesStatus('loading');
+        (async () => {
+            try {
+                const games = await getInstalledGames();
+                if (cancelled) return;
+                setInstalledGames(Array.isArray(games) ? games : []);
+                setGamesStatus('ready');
+            } catch (e) {
+                console.error('[Timeout] get_installed_games failed:', e);
+                if (!cancelled) setGamesStatus('error');
+            }
+        })();
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [gamesReload]);
 
     if (!config) {
         return <Wrap><div style={{ color: '#888' }}>Loading…</div></Wrap>;
@@ -36,6 +72,12 @@ export const GameLimitsSettingsPage = () => {
 
     const g = config.global;
     const setG = (patch: Partial<typeof g>) => updateConfig({ global: patch });
+
+    // Warn thresholds are persisted as a 2-element list [before-cap, at-cap]
+    // (default [5, 1]); guard the shape in case an older config predates it.
+    const thresholds = Array.isArray(g.warn_thresholds_minutes) ? g.warn_thresholds_minutes : [5, 1];
+    const warnBefore = typeof thresholds[0] === 'number' ? thresholds[0] : 5;
+    const warnAt = typeof thresholds[1] === 'number' ? thresholds[1] : 1;
 
     const addApp = () => {
         const id = newAppId.trim();
@@ -49,6 +91,19 @@ export const GameLimitsSettingsPage = () => {
         delete next[id];
         updateConfig({ per_game: next });
     };
+    // Picker "Add": create the per-game override entry with empty (default) overrides.
+    const addAppId = (id: string) => {
+        updateConfig({ per_game: { ...config.per_game, [id]: {} } });
+    };
+
+    // Day mask; missing/older configs default to all seven days.
+    const curfewDays = Array.isArray(g.curfew_days) ? g.curfew_days : ALL_WEEK_DAYS;
+
+    // Installed-games search filter (name or AppID, case-insensitive).
+    const query = gamesQuery.trim().toLowerCase();
+    const filteredGames = (installedGames ?? [])
+        .filter((game) => !query || game.name.toLowerCase().includes(query) || game.appid.includes(query))
+        .sort((a, b) => a.name.localeCompare(b.name));
 
     const listLabel = config.mode === 'whitelist' ? 'Limited games (AppIDs)' : 'Exempt games (AppIDs)';
 
@@ -156,6 +211,24 @@ export const GameLimitsSettingsPage = () => {
                             />
                         </PanelSectionRow>
                         <PanelSectionRow>
+                            <SliderField
+                                label="Warn before cap"
+                                description={`${warnBefore} min remaining`}
+                                value={warnBefore}
+                                min={0} max={30} step={1}
+                                onChange={(v) => setG({ warn_thresholds_minutes: [v, warnAt] })}
+                            />
+                        </PanelSectionRow>
+                        <PanelSectionRow>
+                            <SliderField
+                                label="Warn at cap"
+                                description={`${warnAt} min remaining`}
+                                value={warnAt}
+                                min={1} max={10} step={1}
+                                onChange={(v) => setG({ warn_thresholds_minutes: [warnBefore, v] })}
+                            />
+                        </PanelSectionRow>
+                        <PanelSectionRow>
                             <ToggleField
                                 label="Active window (relaxes outside)"
                                 description="Only enforce the session cap during these hours"
@@ -218,6 +291,31 @@ export const GameLimitsSettingsPage = () => {
                                 onChange={(v) => setG({ curfew_end: hourToHHMM(v) })}
                             />
                         </PanelSectionRow>
+                        <PanelSectionRow>
+                            <div style={{ width: '100%' }}>
+                                <div style={{ fontSize: 13, color: '#aaa', marginBottom: 4 }}>Active days</div>
+                                <Focusable flow-children="row" style={{ display: 'flex', flexWrap: 'wrap', gap: '0 12px' }}>
+                                    {WEEK_DAYS.map((day) => (
+                                        <div key={day.key} style={{ minWidth: 140 }}>
+                                            <ToggleField
+                                                label={day.label}
+                                                checked={curfewDays.includes(day.key)}
+                                                onChange={(v) => setG({
+                                                    curfew_days: v
+                                                        ? [...curfewDays, day.key]
+                                                        : curfewDays.filter((d) => d !== day.key)
+                                                })}
+                                            />
+                                        </div>
+                                    ))}
+                                </Focusable>
+                                {curfewDays.length === 0 && (
+                                    <div style={{ fontSize: 12, color: '#e69900', marginTop: 4 }}>
+                                        No days selected — the curfew applies every day.
+                                    </div>
+                                )}
+                            </div>
+                        </PanelSectionRow>
                     </>
                 )}
             </PanelSection>
@@ -278,15 +376,62 @@ export const GameLimitsSettingsPage = () => {
                     </Focusable>
                 </PanelSectionRow>
                 <PanelSectionRow>
-                    <ButtonItem layout="below" onClick={async () => {
-                        try {
-                            const games = await getInstalledGames();
-                            toaster.toast({ title: 'Game Limits', body: `${games.length} installed games found.` });
-                        } catch (e) { console.error(e); }
-                    }} bottomSeparator="none">
-                        Load installed games
-                    </ButtonItem>
+                    <TextField
+                        label="Search installed games"
+                        value={gamesQuery}
+                        onChange={(e) => setGamesQuery(e.target.value)}
+                    />
                 </PanelSectionRow>
+                {gamesStatus === 'loading' && (
+                    <PanelSectionRow>
+                        <div style={{ color: '#888', fontSize: 13 }}>Loading installed games…</div>
+                    </PanelSectionRow>
+                )}
+                {gamesStatus === 'error' && (
+                    <PanelSectionRow>
+                        <Focusable flow-children="row" style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+                            <span style={{ color: '#ff6666', fontSize: 13, flex: 1 }}>Couldn't load installed games.</span>
+                            <ButtonItem layout="below" onClick={() => setGamesReload((n) => n + 1)} bottomSeparator="none">
+                                Retry
+                            </ButtonItem>
+                        </Focusable>
+                    </PanelSectionRow>
+                )}
+                {gamesStatus === 'ready' && filteredGames.length === 0 && (
+                    <PanelSectionRow>
+                        <div style={{ color: '#888', fontSize: 13 }}>
+                            {(installedGames ?? []).length > 0 ? 'No games match your search.' : 'No installed games found.'}
+                        </div>
+                    </PanelSectionRow>
+                )}
+                {gamesStatus === 'ready' && filteredGames.length > 0 && (
+                    <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+                        {filteredGames.map((game) => {
+                            const added = Object.prototype.hasOwnProperty.call(config.per_game, game.appid);
+                            return (
+                                <PanelSectionRow key={game.appid}>
+                                    <Focusable flow-children="row" style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+                                        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {game.name}
+                                        </span>
+                                        <span style={{ fontFamily: 'monospace', fontSize: 12, color: '#888', flexShrink: 0 }}>
+                                            {game.appid}
+                                        </span>
+                                        {added ? (
+                                            <ButtonItem layout="below" onClick={() => removeApp(game.appid)} bottomSeparator="none">
+                                                <FaTrash /> Remove
+                                            </ButtonItem>
+                                        ) : (
+                                            <ButtonItem layout="below" onClick={() => addAppId(game.appid)} bottomSeparator="none">
+                                                <FaPlus /> Add
+                                            </ButtonItem>
+                                        )}
+                                    </Focusable>
+                                </PanelSectionRow>
+                            );
+                        })}
+                    </div>
+                )}
                 {Object.keys(config.per_game).map((id) => (
                     <PanelSectionRow key={id}>
                         <Focusable flow-children="row" style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>

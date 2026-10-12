@@ -9,7 +9,9 @@ export function useGameStatus() {
     const [isRunning, setIsRunning] = useState(false);
 
     useEffect(() => {
-        getGameStatusCall().then(setIsRunning);
+        getGameStatusCall()
+            .then(setIsRunning)
+            .catch((e) => console.error("[Timeout] get_game_status failed:", e));
 
         let unregister: any;
 
@@ -28,12 +30,16 @@ export function useGameStatus() {
         }
 
         return () => {
-            if (unregister) {
-                if (typeof unregister === 'function') {
-                    unregister();
-                } else if (unregister.unregister) {
-                    unregister.unregister();
+            try {
+                if (unregister) {
+                    if (typeof unregister === 'function') {
+                        unregister();
+                    } else if (unregister.unregister) {
+                        unregister.unregister();
+                    }
                 }
+            } catch (e) {
+                console.error("[Timeout] useGameStatus cleanup failed:", e);
             }
         };
     }, []);

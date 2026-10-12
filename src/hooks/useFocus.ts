@@ -124,12 +124,22 @@ export function useFocus() {
             setState(newState);
         };
 
+        // Backup import: refetch focus state through the same load path
+        // the hook uses for initial state.
+        const handleDataImported = () => {
+            loadState();
+        };
+
         addEventListener('timeout_focus_tick', handleTick);
         addEventListener('timeout_focus_started', handlePhaseChange);
         addEventListener('timeout_focus_phase_changed', handlePhaseChange);
         addEventListener('timeout_focus_work_ended', handlePhaseChange);
         addEventListener('timeout_focus_break_ended', handlePhaseChange);
         addEventListener('timeout_focus_stopped', handleStopped);
+        // Backend resync (missed-phase reset, suspend/resume, factory reset):
+        // payload is a full focus state, same shape as the other phase events.
+        addEventListener('timeout_focus_updated', handlePhaseChange);
+        addEventListener('timeout_data_imported', handleDataImported);
 
         // Load initial data
         loadState();
@@ -141,6 +151,8 @@ export function useFocus() {
             removeEventListener('timeout_focus_work_ended', handlePhaseChange);
             removeEventListener('timeout_focus_break_ended', handlePhaseChange);
             removeEventListener('timeout_focus_stopped', handleStopped);
+            removeEventListener('timeout_focus_updated', handlePhaseChange);
+            removeEventListener('timeout_data_imported', handleDataImported);
         };
     }, [loadState]);
 
