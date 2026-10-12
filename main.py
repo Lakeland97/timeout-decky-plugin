@@ -127,6 +127,8 @@ DEFAULT_SETTINGS = {
             "grace_seconds": 60,
             "five_min_finish_minutes": 5,
             "warn_thresholds_minutes": [5, 1],
+            # Spec trip(): play_sound(warning_sound) on the verified kill.
+            "warning_sound": "alarm.mp3",
             # Per-limit active windows: inside the window the limit applies; outside it relaxes (free play).
             # start==end means an empty window -> never active -> that limit is always relaxed.
             "opens_window_enabled": False,
@@ -865,6 +867,37 @@ class Plugin:
         await decky.emit("timeout_focus_started", state)
         # Update sleep inhibitor
         await self._update_sleep_inhibitor()
+
+        # Feature-audit gap #6: games ALREADY running when the session starts
+        # must get the same tier treatment as launches (report_game_session_started):
+        # hard terminates each running tracked/limited app, medium warns instead,
+        # soft does nothing. The whole block is guarded so a /proc scan failure
+        # can never prevent the focus session above from starting.
+        try:
+            if tier_val in ("hard", "medium"):
+                running = self._running_app_ids()
+                if running:
+                    cfg = await self._get_game_limits_config()
+                    tracked_state = await self._get_game_limits_state()
+                    for app_id in sorted(running):
+                        if app_id not in tracked_state and not self._is_limited(app_id, cfg):
+                            continue  # neither tracked by nor limited under game limits
+                        if tier_val == "medium":
+                            decky.logger.info(f"Timeout: focus medium tier — warning already-running appid={app_id}")
+                            await decky.emit("timeout_game_warning",
+                                             {"appid": app_id, "reason": "focus_medium",
+                                              "message": "Focus session active"})
+                            continue
+                        decky.logger.info(f"Timeout: focus hard tier — terminating already-running appid={app_id}")
+                        if await self._terminate_game(app_id):
+                            await decky.emit("timeout_game_terminated",
+                                             {"appid": app_id, "reason": "focus_hard"})
+                        else:
+                            await decky.emit("timeout_game_warning",
+                                             {"appid": app_id, "reason": "terminate_failed"})
+        except Exception:
+            decky.logger.exception("Timeout: focus start could not enforce already-running games; focus session is active")
+
         return state
 
     async def stop_focus_session(self) -> bool:
@@ -1423,9 +1456,10 @@ class Plugin:
             if not isinstance(entry, dict):
                 continue  # corrupt entry: drop it; a fresh one is created on next launch
             entry = dict(entry)
-            # Deadlines must be numeric: grace/cap/cooldown comparisons run every
-            # second in _game_limits_handler and would raise on string values.
-            for field in ("session_start", "session_cap_end", "cooldown_until", "grace_until"):
+            # Deadlines must be numeric: grace/cap/cooldown/retry comparisons run
+            # every second in _game_limits_handler and would raise on string values.
+            for field in ("session_start", "session_cap_end", "cooldown_until", "grace_until",
+                          "kill_retry_at"):
                 value = entry.get(field)
                 if value is not None and not isinstance(value, (int, float)):
                     try:
@@ -1599,15 +1633,16 @@ class Plugin:
             await decky.emit("timeout_game_streak", {"current": 0, "longest": 0})
         return True
 
-    def _scan_reaper_pids(self, appid: str) -> list:
-        """Find Steam reaper PIDs for appid by scanning /proc/*/cmdline.
-        Pattern (Lutris-sourced): 'reaper SteamLaunch AppId=<appid>'."""
-        prefix = f"SteamLaunch AppId={appid}"
-        pids = []
+    def _scan_reaper_procs(self) -> dict:
+        """Scan /proc/*/cmdline once for Steam reaper processes.
+        Pattern (Lutris-sourced): 'reaper SteamLaunch AppId=<appid>'.
+        Returns {appid: [pid, ...]}; an unreadable /proc yields {} (no raise)."""
+        marker = "SteamLaunch AppId="
+        procs = {}
         try:
             entries = os.listdir("/proc")
         except OSError:
-            return pids
+            return procs
         for pid_str in entries:
             if not pid_str.isdigit():
                 continue
@@ -1618,25 +1653,64 @@ class Plugin:
                 continue
             if "reaper" not in cmdline:
                 continue
-            idx = cmdline.find(prefix)
-            if idx == -1:
-                continue
-            after = cmdline[idx + len(prefix): idx + len(prefix) + 1]
-            if after in ("", " "):
-                pids.append(int(pid_str))
-        return pids
+            start = 0
+            while True:
+                idx = cmdline.find(marker, start)
+                if idx == -1:
+                    break
+                start = idx + len(marker)
+                appid = cmdline[start:].split(" ", 1)[0]
+                if appid.isdigit():
+                    pids = procs.setdefault(appid, [])
+                    if int(pid_str) not in pids:
+                        pids.append(int(pid_str))
+        return procs
+
+    def _scan_reaper_pids(self, appid: str) -> list:
+        """Find Steam reaper PIDs for appid — a thin view over _scan_reaper_procs
+        so the /proc walk is implemented exactly once."""
+        return self._scan_reaper_procs().get(str(appid), [])
+
+    def _running_app_ids(self) -> set:
+        """Read-only: appids of everything with a live Steam reaper process."""
+        return set(self._scan_reaper_procs())
 
     async def _terminate_game(self, appid: str) -> bool:
+        """Escalating, verified termination. True ONLY after a verification
+        rescan shows the appid's reaper processes are gone.
+
+        SIGTERM matched pids -> sleep(3) -> rescan (SIGKILL survivors) ->
+        sleep(2) -> rescan -> verdict. No reaper match returns False without
+        killing anything; every stage is logged. Never touches SETTINGS_LOCK
+        (callers may hold it; the sleeps extend their hold but cannot nest it).
+        """
         pids = self._scan_reaper_pids(appid)
         if not pids:
             decky.logger.warning(f"Timeout: reaper not found for appid={appid}; cannot terminate")
             return False
+        decky.logger.info(f"Timeout: SIGTERM stage: pids {pids} for appid={appid}")
         for pid in pids:
             try:
-                os.kill(pid, signal.SIGKILL)
+                os.kill(pid, signal.SIGTERM)
             except OSError as e:
-                decky.logger.error(f"Timeout: SIGKILL pid={pid} failed: {e}")
-        decky.logger.info(f"Timeout: SIGKILLed reaper pids {pids} for appid={appid}")
+                decky.logger.error(f"Timeout: SIGTERM pid={pid} failed: {e}")
+        await asyncio.sleep(3)
+        survivors = self._scan_reaper_pids(appid)
+        if survivors:
+            decky.logger.info(f"Timeout: SIGKILL stage: survivors {survivors} for appid={appid}")
+            for pid in survivors:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except OSError as e:
+                    decky.logger.error(f"Timeout: SIGKILL pid={pid} failed: {e}")
+        else:
+            decky.logger.info(f"Timeout: SIGKILL stage: no survivors after SIGTERM for appid={appid}")
+        await asyncio.sleep(2)
+        leftover = self._scan_reaper_pids(appid)
+        if leftover:
+            decky.logger.warning(f"Timeout: verification stage: appid={appid} still alive: {leftover}")
+            return False
+        decky.logger.info(f"Timeout: verification stage: appid={appid} processes gone")
         return True
 
     async def report_game_session_started(self, app_id: str, app_name: str = "") -> dict:
@@ -1710,6 +1784,11 @@ class Plugin:
             entry["in_grace"] = False
             entry["grace_until"] = None
             entry["killed"] = False
+            # Session-scoped kill bookkeeping: a new session must not inherit a
+            # prior session's failed-kill marker (would wrongly deny adherence)
+            # or retry deadline (would suppress the new session's first trip).
+            entry.pop("kill_failed", None)
+            entry.pop("kill_retry_at", None)
             entry["five_min_offered"] = False
             # clear prior threshold-warning markers
             for k in [k for k in list(entry.keys()) if str(k).startswith("warned_")]:
@@ -1743,7 +1822,11 @@ class Plugin:
             rule = self._effective_rule(cfg, app_id)
             if rule.get("cooldown_enabled") and rule.get("cooldown_minutes"):
                 entry["cooldown_until"] = now + rule["cooldown_minutes"] * 60
-            if not was_killed:
+            # Adherence: only a session that ended within its limits counts.
+            # A verified kill (killed) or a runaway whose kill could not be
+            # verified (kill_failed) both ended over the limit — neither may be
+            # marked adherent.
+            if not was_killed and not bool(entry.get("kill_failed")):
                 entry["adherent_today"] = True
             entry["session_start"] = None
             entry["session_cap_end"] = None
@@ -1751,6 +1834,8 @@ class Plugin:
             entry["grace_until"] = None
             entry["is_half_open"] = False
             entry["killed"] = False
+            entry.pop("kill_failed", None)
+            entry.pop("kill_retry_at", None)
             state[app_id] = entry
             await self._save_game_limits_state(state)
             await decky.emit("timeout_game_session_stopped", {"appid": app_id, "reason": "terminated" if was_killed else "manual"})
@@ -1773,11 +1858,13 @@ class Plugin:
             return True
 
     async def _trip(self, appid: str, entry: dict, rule: dict, reason: str) -> bool:
-        """Enter/escalate grace; SIGKILL on grace expiry. Returns True if state mutated.
+        """Enter/escalate grace; verified kill on grace expiry. Returns True if state mutated.
 
-        Mutates only the in-memory entry (the caller persists it) and the streak.
+        Mutates only the in-memory entry (the caller persists it).
         Caller must hold SETTINGS_LOCK: the sole caller is _game_limits_handler,
-        which holds it across the whole read -> mutate -> save tick.
+        which holds it across the whole read -> mutate -> save tick. The kill's
+        verification sleeps run under that hold; _terminate_game and play_sound
+        never acquire SETTINGS_LOCK, so no nested acquisition is possible.
         """
         now = time.time()
         if not entry.get("in_grace"):
@@ -1792,17 +1879,32 @@ class Plugin:
                 entry["grace_until"] = now + 30  # 30s to accept the finish
                 await decky.emit("timeout_game_five_min_available", {"appid": appid})
                 return True
-            killed = await self._terminate_game(appid)
-            entry["killed"] = True
-            entry["session_start"] = None
-            entry["session_cap_end"] = None
-            entry["in_grace"] = False
-            entry["grace_until"] = None
-            if killed:
-                await self._break_game_limits_streak()
+            if await self._terminate_game(appid):
+                # Verified kill: session over. Per spec (trip: "streak unaffected
+                # by a cap/curfew kill — the user hit the limit fairly") this does
+                # NOT break the streak: no streak-break call here.
+                entry["killed"] = True
+                entry["session_start"] = None
+                entry["session_cap_end"] = None
+                entry["in_grace"] = False
+                entry["grace_until"] = None
+                entry.pop("kill_retry_at", None)
+                entry.pop("kill_failed", None)
                 await decky.emit("timeout_game_terminated", {"appid": appid, "reason": reason})
+                try:
+                    await self.play_sound(rule.get("warning_sound") or "alarm.mp3",
+                                           volume=100, loop=False)
+                except Exception:
+                    decky.logger.exception("Timeout: trip sound failed; enforcement unaffected")
             else:
-                await decky.emit("timeout_game_terminate_failed", {"appid": appid})
+                # Kill NOT verified: keep the session fully enforced and
+                # retryable. session_start stays (the handler keeps ticking),
+                # grace stays expired so the retry goes straight back to the
+                # kill, and kill_retry_at makes the handler skip re-tripping for
+                # 60s. kill_failed keeps this runaway run out of adherence.
+                entry["kill_failed"] = True
+                entry["kill_retry_at"] = now + 60
+                await decky.emit("timeout_game_warning", {"appid": appid, "reason": "terminate_failed"})
             return True
         return False
 
@@ -1824,6 +1926,14 @@ class Plugin:
                             if not entry.get("session_start"):
                                 continue
                             any_active = True
+                            # A verified kill failed earlier in this session:
+                            # the entry stays enforced (any_active keeps this
+                            # task alive) but the handler must not re-trip until
+                            # the retry deadline — _trip re-attempts the kill
+                            # once it passes.
+                            retry_at = entry.get("kill_retry_at")
+                            if retry_at and time.time() < retry_at:
+                                continue
                             rule = self._effective_rule(cfg, appid)
                             opens_present = rule.get("opens_enabled", False)
                             time_present = rule.get("time_enabled", False) and not opens_present
