@@ -8,6 +8,9 @@ Play-time limits, focus modes, and parental controls for Steam Deck.
 
 > **Timeout is in early development.**
 
+**Testers:** the field-test runbook lives in **[TESTING.md](TESTING.md)** — install
+steps, 10 manual test scenarios, and known limitations.
+
 ## Features
 
 ✓ shipped · ◐ WIP · ✗ planned
@@ -16,7 +19,7 @@ Play-time limits, focus modes, and parental controls for Steam Deck.
 - ✓ Focus sessions
 - ✓ Statistics
 - ✓ Background persistence
-- ◐ Take-a-break
+- ✓ Take-a-break (per-session cap persists)
 
 ### 🔊 Custom sounds
 - ✓ Import custom sounds
@@ -25,34 +28,41 @@ Play-time limits, focus modes, and parental controls for Steam Deck.
 - ✓ SteamOS sleep inhibition
 
 ### 💾 Backup & restore
-- ✓ Export/import backup
+- ✓ Export/import backup (paths confined to ~/Documents and ~/Downloads)
 
 ### 🎮 Game Limits
-- ◐ Game selection
-- ◐ Limits
-- ◐ Budgets
-- ◐ Half-opens
-- ◐ Cooldowns
-- ◐ Curfew
-- ◐ Per-limit active windows
-- ◐ Concession
+- ✓ Game selection
+- ✓ Limits
+- ✓ Budgets
+- ✓ Half-opens
+- ✓ Cooldowns
+- ✓ Curfew
+- ✓ Per-limit active windows
+- ✓ Concession
 
 ### 🎯 Focus enforcement tiers
-- ◐ Soft
-- ◐ Medium
-- ◐ Hard
+- ✓ Soft
+- ✓ Medium (launch warn)
+- ✓ Hard (launch + already-running)
 
 ### 🔒 Parental controls + passcode
-- ◐ Self-control mode
-- ◐ Administrative lockout
+- ✓ Self-control mode
+- ✓ Administrative lockout
+
+Passcodes are stored as a salted SHA-256 hash on-device: **household-grade
+(hashed), not account-grade auth** — see [TESTING.md known limitations](TESTING.md#known-limitations).
 
 ### 🧘 Mindfulness pause
-- ◐ Cooldown before distractions
-- ◐ Cooldown on entering settings
+- ✓ Cooldown before distractions
+- ✓ Cooldown on entering settings
 
 ### 🔥 Streaks
-- ◐ Game-limits streak
+- ✓ Game-limits streak[^streak]
 - ✗ Unified metric
+
+[^streak]: Consecutive adherent days. A day ending in a verified cap/curfew kill
+is streak-neutral (no increment, no zero); a zero-gaming day resets the count —
+see [TESTING.md](TESTING.md#known-limitations).
 
 > [Open an issue](https://github.com/Lakeland97/timeout-decky-plugin/issues) if you have feedback.
 
