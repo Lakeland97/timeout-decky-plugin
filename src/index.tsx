@@ -31,7 +31,7 @@ import { useSleepInhibitor } from "./hooks/useSleepInhibitor";
 import { useFocus } from "./hooks/useFocus";
 import { useMissedAlerts } from "./hooks/useMissedAlerts";
 import { reportGameStarted, reportGameStopped } from "./hooks/useGameLimits";
-import { showLaunchMenu, showFiveMinFinishPrompt, showGameToast } from "./components/GameLimitsModals";
+import { showLaunchMenu, showFiveMinFinishPrompt, showGameToast, showBlockedLaunchToast } from "./components/GameLimitsModals";
 import { MODAL_ZINDEX_CSS } from "./utils/zIndex";
 
 // Types
@@ -454,9 +454,7 @@ export default definePlugin(() => {
                                 } else if (decision.limited && decision.blocked) {
                                     // Backend terminated the blocked launch when it could;
                                     // otherwise tell the user to close it themselves.
-                                    showGameToast("Game Limits", decision.terminated
-                                        ? `${appId} blocked (${decision.blocked})`
-                                        : `${appId} blocked (${decision.blocked}) — could not be stopped, close it manually`);
+                                    showBlockedLaunchToast(appId, decision);
                                 }
                             }).catch((e) => console.error("[Timeout] reportGameStarted failed:", e));
                         });

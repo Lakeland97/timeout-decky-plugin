@@ -72,7 +72,7 @@ Setup: Game Limits settings → enable the feature, use the **installed-games pi
 ## 4. Self-control mode lock holds
 
 1. Action: Parental controls → set a passcode and enable controls; lock (self mode).
-   → Expected: The passcode is stored only as a salted SHA-256 hash (household-grade — see known limitations). Locked features (game limits, focus tier, take-a-break, mindfulness) become read-only in the UI.
+   → Expected: The passcode is stored only as a salted SHA-256 hash (household-grade — see known limitations). Locked features (game limits, focus tier, take-a-break, mindfulness) are enforced by the backend even if a control still appears editable (e.g. the take-a-break cap slider stays writable while locked).
 2. Action: Try to change each locked feature from the settings UI.
    → Expected: Changes are refused (no unlock → no change).
 3. Action: From the CEF console (README → CEF Debugging), attempt `update_settings` with protected keys, e.g. change `game_limits_config` or `parental_controls`.
@@ -100,8 +100,8 @@ Setup: Mindfulness settings → enable the pause globally and enable all five tr
 1. Action: Start a **soft** session; launch any game.
    → Expected: No warning; game runs undisturbed.
 2. Action: Start a **medium** session; launch a game.
-   → Expected: A "Focus session active" warning is shown; the launch is **allowed**. Also start medium while that game is **already running**.
-   → Expected: A warning is emitted for the running game; it is not killed.
+   → Expected: A "Focus session active" warning is shown; the launch is **allowed**. Also start medium while a tracked/limited game is **already running**.
+   → Expected: A warning is emitted for the running tracked/limited game; it is not killed (an untracked game gets no warning).
 3. Action: Start a **hard** session; launch a game.
    → Expected: The launch is **blocked and the game terminated**.
 4. Action: Start a **hard** session while a tracked/limited game is **already running**.
