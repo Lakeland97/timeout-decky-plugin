@@ -835,9 +835,10 @@ class Plugin:
                 "end_time": time.time() + work_duration,
                 "duration": work_duration
             }
+            state["adhoc_breaks_used"] = focus_state.get("adhoc_breaks_used", 0)
         else:
             # Starting break
-            sessions_until_long = user_settings.get("focus_sessions_until_long_break", 4)
+            sessions_until_long = max(1, int(user_settings.get("focus_sessions_until_long_break") or 4))
             if session % sessions_until_long == 0:
                 break_duration = user_settings.get("focus_long_break_duration", 15) * 60
                 break_type = "long"
@@ -856,6 +857,7 @@ class Plugin:
                 "duration": break_duration,
                 "break_type": break_type
             }
+            state["adhoc_breaks_used"] = focus_state.get("adhoc_breaks_used", 0)
         
         await self._save_focus_state(state)
         
@@ -1146,10 +1148,11 @@ class Plugin:
                             "subtle_mode": is_subtle,
                             "stats": await self._get_focus_stats()
                         }
+                        new_state["adhoc_breaks_used"] = state.get("adhoc_breaks_used", 0)
                         await decky.emit("timeout_focus_break_ended", new_state)
                     else:
                         # Work finished, start break
-                        sessions_until_long = user_settings.get("focus_sessions_until_long_break", 4)
+                        sessions_until_long = max(1, int(user_settings.get("focus_sessions_until_long_break") or 4))
                         if session % sessions_until_long == 0:
                             break_duration = user_settings.get("focus_long_break_duration", 15) * 60
                             break_type = "long"
@@ -1171,6 +1174,7 @@ class Plugin:
                             "subtle_mode": user_settings.get("focus_subtle_mode", False),
                             "stats": await self._get_focus_stats()
                         }
+                        new_state["adhoc_breaks_used"] = state.get("adhoc_breaks_used", 0)
                         await decky.emit("timeout_focus_work_ended", new_state)
                     
                     await self._save_focus_state(new_state)
@@ -1202,6 +1206,46 @@ class Plugin:
     async def _save_focus_state(self, state: dict):
         await self.settings_setSetting(SETTINGS_KEY_FOCUS, state)
         await self.settings_commit()
+
+    async def _reconcile_focus_state(self) -> None:
+        """Reconcile stale focus state at boot.
+
+        If a phase is marked active but its end_time is missing, corrupt, or
+        already past, record the miss and mark it inactive so resume and
+        launch-time tier enforcement see the truth instead of acting on a
+        phase that already ended.
+        """
+        focus = await self._get_focus_state()
+        if not focus.get("active"):
+            return
+
+        end_time = focus.get("end_time")
+        try:
+            # int() coercion so a string end_time can't raise here.
+            end_ts = int(end_time)
+        except (TypeError, ValueError, OverflowError):
+            end_ts = None
+
+        if end_ts is not None and end_ts > time.time():
+            # Phase still live. Normalize a numeric string so downstream
+            # comparisons (e.g. the resume check in _main) cannot raise.
+            if not isinstance(end_time, (int, float)):
+                focus["end_time"] = end_ts
+                await self._save_focus_state(focus)
+            return
+
+        # Expired or corrupt: mirror _check_missed_focus's expired branch.
+        # Only record a miss if a real scheduled deadline was in flight.
+        if end_ts is not None and end_ts > 0:
+            label = "Focus Break" if focus.get("is_break") else "Focus Focus"
+            finished_at_str = datetime.fromtimestamp(end_ts).strftime('%H:%M')
+            details = f"Session finished at {finished_at_str}"
+            await self._add_missed_item("focus", "focus-session", label, end_ts, details)
+
+        focus["active"] = False
+        focus["remaining"] = 0
+        await self._save_focus_state(focus)
+        await decky.emit("timeout_focus_updated", focus)
 
     # ==================== GAME LIMITS METHODS (sub-project B) ====================
 
@@ -1400,7 +1444,10 @@ class Plugin:
         await self._daily_rollover_check()
         # Focus enforcement tier (sub-project C) - checked before game limits.
         focus = await self._get_focus_state()
-        if focus.get("active") and not focus.get("is_break", False):
+        # Expired-but-active counts as inactive: only a live phase enforces tiers.
+        focus_live = (focus.get("active") and focus.get("end_time")
+                      and float(focus["end_time"]) > time.time())
+        if focus_live and not focus.get("is_break", False):
             ftier = focus.get("tier", "soft")
             if ftier == "hard":
                 # Hard focus: terminate the game immediately.
@@ -2192,7 +2239,7 @@ class Plugin:
              # Mark inactive
              focus["active"] = False
              focus["remaining"] = 0
-             await self._save_focus_state()
+             await self._save_focus_state(focus)
              
              await decky.emit("timeout_focus_updated", focus)
 
@@ -2259,6 +2306,12 @@ class Plugin:
         
         await self.settings_read()
         await self._migrate_settings_schema()
+
+        # Reconcile stale focus state before any resume/enforcement.
+        try:
+            await self._reconcile_focus_state()
+        except Exception:
+            decky.logger.exception("Timeout: Focus state reconciliation failed")
 
         current_time = time.time()
         # Resume Focus if active
