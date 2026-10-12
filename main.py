@@ -13,14 +13,46 @@ import uuid
 import json
 import fcntl
 import struct
+import tempfile
 
-# Initialize settings
-settingsDir = os.environ["DECKY_PLUGIN_SETTINGS_DIR"]
-runtimeDir = os.environ["DECKY_PLUGIN_RUNTIME_DIR"]
+
+class _InMemorySettings:
+    """Degraded SettingsManager stand-in: keeps everything in memory.
+
+    Used when the real SettingsManager cannot be constructed or loaded, so the
+    plugin still runs with defaults instead of dying at import. Nothing is
+    persisted across restarts in this mode.
+    """
+
+    def __init__(self):
+        self._data = {}
+
+    def read(self):
+        return True
+
+    def commit(self):
+        return True
+
+    def getSetting(self, key, defaults=None):
+        return self._data.get(key, defaults)
+
+    def setSetting(self, key, value):
+        self._data[key] = value
+        return True
+
+
+# Initialize settings (tolerate non-Decky environments and settings I/O failures)
+settingsDir = os.environ.get("DECKY_PLUGIN_SETTINGS_DIR") or os.path.join(tempfile.gettempdir(), "timeout-decky-settings")
+runtimeDir = os.environ.get("DECKY_PLUGIN_RUNTIME_DIR") or os.path.join(tempfile.gettempdir(), "timeout-decky-runtime")
 decky.logger.info(f'Timeout: Settings path = {os.path.join(settingsDir, "settings.json")}')
 decky.logger.info(f"Timeout: Runtime data path = {runtimeDir}")
-settings = SettingsManager(name="settings", settings_directory=settingsDir)
-settings.read()
+try:
+    os.makedirs(settingsDir, exist_ok=True)
+    settings = SettingsManager(name="settings", settings_directory=settingsDir)
+    settings.read()
+except Exception:
+    decky.logger.exception("Timeout: SettingsManager init failed; degrading to in-memory defaults (no persistence)")
+    settings = _InMemorySettings()
 
 # Settings keys
 SETTINGS_KEY_SETTINGS = "user_settings"
@@ -310,6 +342,7 @@ class Plugin:
             if self.loop and self._uinput_fd > 0:
                 self._sleep_inhibitor_active = True
                 self._jiggler_task = self.loop.create_task(self._jiggler_loop())
+                self._jiggler_task.add_done_callback(self._log_task_exception)
                 decky.logger.info(f"Timeout: Sleep inhibitor active - {reason}")
                 await decky.emit("timeout_sleep_inhibitor_updated", {
                     "active": True,
@@ -717,6 +750,7 @@ class Plugin:
             self.focus_task.cancel()
         
         self.focus_task = self.loop.create_task(self._focus_handler())
+        self.focus_task.add_done_callback(self._log_task_exception)
         
         decky.logger.info(f"Timeout: Started Focus session {session}")
         
@@ -865,6 +899,7 @@ class Plugin:
         if self.focus_task:
             self.focus_task.cancel()
         self.focus_task = self.loop.create_task(self._focus_handler())
+        self.focus_task.add_done_callback(self._log_task_exception)
         
         # Inject stats for frontend
         state["stats"] = await self._get_focus_stats()
@@ -911,6 +946,7 @@ class Plugin:
         if self.focus_task:
             self.focus_task.cancel()
         self.focus_task = self.loop.create_task(self._focus_handler())
+        self.focus_task.add_done_callback(self._log_task_exception)
         state["stats"] = await self._get_focus_stats()
         await decky.emit("timeout_focus_phase_changed", state)
         return state
@@ -1056,140 +1092,146 @@ class Plugin:
         """Background task to handle Focus timing."""
         try:
             while True:
-                now = time.time()
-                # Sync with suspend monitor to avoid double-processing during resume
-                if self.last_tick > 0 and now - self.last_tick > 5:
-                    await asyncio.sleep(0.5)
-                    continue
+                try:
+                    now = time.time()
+                    # Sync with suspend monitor to avoid double-processing during resume
+                    if self.last_tick > 0 and now - self.last_tick > 5:
+                        await asyncio.sleep(0.5)
+                        continue
 
-                state = await self._get_focus_state()
+                    state = await self._get_focus_state()
                 
-                if not state.get("active"):
-                    return
+                    if not state.get("active"):
+                        return
                 
-                remaining = state.get("end_time", 0) - time.time()
+                    remaining = state.get("end_time", 0) - time.time()
                 
-                if remaining <= 0:
-                    # Phase completed
-                    user_settings = await self._get_user_settings()
-                    is_break = state.get("is_break", False)
-                    session = state.get("current_session", 1)
-                    cycle = state.get("current_cycle", 1)
+                    if remaining <= 0:
+                        # Phase completed
+                        user_settings = await self._get_user_settings()
+                        is_break = state.get("is_break", False)
+                        session = state.get("current_session", 1)
+                        cycle = state.get("current_cycle", 1)
                     
-                    # Check if missed by > 60 seconds
-                    if remaining < -60:
-                        decky.logger.info(f"Timeout: Focus phase missed by {abs(remaining):.0f}s")
-                        missed_label = f"Focus: {'Break' if is_break else 'Focus Session'} {session}"
-                        # Use scheduled end time as due time
-                        due_time = state.get("end_time", time.time())
-                        await self._add_missed_item("focus", "focus", missed_label, due_time)
+                        # Check if missed by > 60 seconds
+                        if remaining < -60:
+                            decky.logger.info(f"Timeout: Focus phase missed by {abs(remaining):.0f}s")
+                            missed_label = f"Focus: {'Break' if is_break else 'Focus Session'} {session}"
+                            # Use scheduled end time as due time
+                            due_time = state.get("end_time", time.time())
+                            await self._add_missed_item("focus", "focus", missed_label, due_time)
                         
-                        # Stop the cycle (do not auto-advance)
-                        # Credit the session duration (capped) because it "finished"
-                        elapsed = state.get("duration", 0) # Use intended duration
+                            # Stop the cycle (do not auto-advance)
+                            # Credit the session duration (capped) because it "finished"
+                            elapsed = state.get("duration", 0) # Use intended duration
+                            try:
+                                await self._update_focus_stats(
+                                    is_break=is_break,
+                                    duration=elapsed,
+                                    completed_session=not is_break,
+                                    completed_cycle=is_break and state.get("break_type") == "long"
+                                )
+                            except Exception as e:
+                                decky.logger.error(f"Timeout: Stats update error: {e}")
+
+                            # Reset state to inactive
+                            new_state = await self._get_focus_state()
+                            new_state["active"] = False
+                            new_state["remaining"] = 0
+                            await self._save_focus_state(new_state)
+                            await decky.emit("timeout_focus_updated", new_state)
+                            # Update sleep inhibitor
+                            await self._update_sleep_inhibitor()
+                            return # Exit loop
+
+                        # Update stats for completed phase
                         try:
-                            await self._update_focus_stats(
-                                is_break=is_break,
-                                duration=elapsed,
-                                completed_session=not is_break,
-                                completed_cycle=is_break and state.get("break_type") == "long"
-                            )
+                            if state.get("start_time"):
+                                elapsed = time.time() - state.get("start_time")
+                                await self._update_focus_stats(
+                                    is_break=is_break,
+                                    duration=elapsed,
+                                    completed_session=not is_break,
+                                    completed_cycle=is_break and state.get("break_type") == "long"
+                                )
                         except Exception as e:
-                            decky.logger.error(f"Timeout: Stats update error: {e}")
-
-                        # Reset state to inactive
-                        new_state = await self._get_focus_state()
-                        new_state["active"] = False
-                        new_state["remaining"] = 0
-                        await self._save_focus_state(new_state)
-                        await decky.emit("timeout_focus_updated", new_state)
-                        # Update sleep inhibitor
-                        await self._update_sleep_inhibitor()
-                        return # Exit loop
-
-                    # Update stats for completed phase
-                    try:
-                        if state.get("start_time"):
-                            elapsed = time.time() - state.get("start_time")
-                            await self._update_focus_stats(
-                                is_break=is_break,
-                                duration=elapsed,
-                                completed_session=not is_break,
-                                completed_cycle=is_break and state.get("break_type") == "long"
-                            )
-                    except Exception as e:
-                        decky.logger.error(f"Timeout: Failed to update stats on completion: {e}")
+                            decky.logger.error(f"Timeout: Failed to update stats on completion: {e}")
                     
-                    if is_break:
-                        # Break finished, start new work session
-                        work_duration = user_settings.get("focus_work_duration", 25) * 60
-                        focus_sound = user_settings.get("focus_sound", "alarm.mp3")
-                        is_subtle = user_settings.get("focus_subtle_mode", False)
+                        if is_break:
+                            # Break finished, start new work session
+                            work_duration = user_settings.get("focus_work_duration", 25) * 60
+                            focus_sound = user_settings.get("focus_sound", "alarm.mp3")
+                            is_subtle = user_settings.get("focus_subtle_mode", False)
                         
-                        # Check if a long break just finished
-                        was_long_break = state.get("break_type") == "long"
-                        if was_long_break:
-                            new_session = 1
-                            new_cycle = cycle + 1
-                        else:
-                            new_session = session + 1
-                            new_cycle = cycle
+                            # Check if a long break just finished
+                            was_long_break = state.get("break_type") == "long"
+                            if was_long_break:
+                                new_session = 1
+                                new_cycle = cycle + 1
+                            else:
+                                new_session = session + 1
+                                new_cycle = cycle
                             
-                        new_state = {
-                            "active": True,
-                            "is_break": False,
-                            "current_session": new_session,
-                            "current_cycle": new_cycle,
-                            "tier": state.get("tier", "soft"),
-                            "start_time": time.time(),
-                            "end_time": time.time() + work_duration,
-                            "duration": work_duration,
-                            "sound": focus_sound,
-                            "subtle_mode": is_subtle,
-                            "stats": await self._get_focus_stats()
-                        }
-                        new_state["adhoc_breaks_used"] = state.get("adhoc_breaks_used", 0)
-                        await decky.emit("timeout_focus_break_ended", new_state)
-                    else:
-                        # Work finished, start break
-                        sessions_until_long = max(1, int(user_settings.get("focus_sessions_until_long_break") or 4))
-                        if session % sessions_until_long == 0:
-                            break_duration = user_settings.get("focus_long_break_duration", 15) * 60
-                            break_type = "long"
+                            new_state = {
+                                "active": True,
+                                "is_break": False,
+                                "current_session": new_session,
+                                "current_cycle": new_cycle,
+                                "tier": state.get("tier", "soft"),
+                                "start_time": time.time(),
+                                "end_time": time.time() + work_duration,
+                                "duration": work_duration,
+                                "sound": focus_sound,
+                                "subtle_mode": is_subtle,
+                                "stats": await self._get_focus_stats()
+                            }
+                            new_state["adhoc_breaks_used"] = state.get("adhoc_breaks_used", 0)
+                            await decky.emit("timeout_focus_break_ended", new_state)
                         else:
-                            break_duration = user_settings.get("focus_break_duration", 5) * 60
-                            break_type = "short"
+                            # Work finished, start break
+                            sessions_until_long = max(1, int(user_settings.get("focus_sessions_until_long_break") or 4))
+                            if session % sessions_until_long == 0:
+                                break_duration = user_settings.get("focus_long_break_duration", 15) * 60
+                                break_type = "long"
+                            else:
+                                break_duration = user_settings.get("focus_break_duration", 5) * 60
+                                break_type = "short"
                         
-                        new_state = {
-                            "active": True,
-                            "is_break": True,
-                            "current_session": session,
-                            "current_cycle": cycle,
-                            "tier": state.get("tier", "soft"),
-                            "start_time": time.time(),
-                            "end_time": time.time() + break_duration,
-                            "duration": break_duration,
-                            "break_type": break_type,
-                            "sound": user_settings.get("focus_sound", "alarm.mp3"),
-                            "subtle_mode": user_settings.get("focus_subtle_mode", False),
-                            "stats": await self._get_focus_stats()
-                        }
-                        new_state["adhoc_breaks_used"] = state.get("adhoc_breaks_used", 0)
-                        await decky.emit("timeout_focus_work_ended", new_state)
+                            new_state = {
+                                "active": True,
+                                "is_break": True,
+                                "current_session": session,
+                                "current_cycle": cycle,
+                                "tier": state.get("tier", "soft"),
+                                "start_time": time.time(),
+                                "end_time": time.time() + break_duration,
+                                "duration": break_duration,
+                                "break_type": break_type,
+                                "sound": user_settings.get("focus_sound", "alarm.mp3"),
+                                "subtle_mode": user_settings.get("focus_subtle_mode", False),
+                                "stats": await self._get_focus_stats()
+                            }
+                            new_state["adhoc_breaks_used"] = state.get("adhoc_breaks_used", 0)
+                            await decky.emit("timeout_focus_work_ended", new_state)
                     
-                    await self._save_focus_state(new_state)
-                    decky.logger.info(f"Timeout: Focus phase changed - is_break={new_state['is_break']}")
+                        await self._save_focus_state(new_state)
+                        decky.logger.info(f"Timeout: Focus phase changed - is_break={new_state['is_break']}")
                 
-                # Emit tick every 5 seconds
-                await decky.emit("timeout_focus_tick", {
-                    "remaining": int(max(0, remaining)),
-                    "is_break": state.get("is_break", False),
-                    "session": state.get("current_session", 1),
-                    "cycle": state.get("current_cycle", 1)
-                })
+                    # Emit tick every 5 seconds
+                    await decky.emit("timeout_focus_tick", {
+                        "remaining": int(max(0, remaining)),
+                        "is_break": state.get("is_break", False),
+                        "session": state.get("current_session", 1),
+                        "cycle": state.get("current_cycle", 1)
+                    })
                 
-                await asyncio.sleep(1)  # Update every second for real-time display
+                    await asyncio.sleep(1)  # Update every second for real-time display
                 
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    decky.logger.exception("Timeout: Focus handler tick failed; will retry next tick")
+                    await asyncio.sleep(1)
         except asyncio.CancelledError:
             decky.logger.info("Timeout: Focus handler stopped")
 
@@ -1519,6 +1561,7 @@ class Plugin:
         await decky.emit("timeout_game_session_started", payload)
         if not self.game_limits_task or self.game_limits_task.done():
             self.game_limits_task = self.loop.create_task(self._game_limits_handler())
+            self.game_limits_task.add_done_callback(self._log_task_exception)
         return payload
 
     async def report_game_session_stopped(self, app_id: str) -> bool:
@@ -1595,47 +1638,53 @@ class Plugin:
         """Background task: enforce opens/time/curfew per running limited AppID."""
         try:
             while True:
-                cfg = await self._get_game_limits_config()
-                state = await self._get_game_limits_state()
-                dirty = False
-                any_active = False
-                for appid, entry in list(state.items()):
-                    if not entry.get("session_start"):
-                        continue
-                    any_active = True
-                    rule = self._effective_rule(cfg, appid)
-                    opens_present = rule.get("opens_enabled", False)
-                    time_present = rule.get("time_enabled", False) and not opens_present
-                    curfew_present = rule.get("curfew_enabled", False)
-                    curfew_trips = curfew_present and self._now_in_curfew(rule) and not (opens_present and rule.get("opens_bypass_curfew"))
-                    if curfew_trips:
-                        if await self._trip(appid, entry, rule, "curfew"):
-                            dirty = True
-                        continue
-                    # Lazy-cap: if a time-window was outside at launch but is now inside, set the cap now.
-                    time_outside_window = rule.get("time_window_enabled") and not self._now_in_window(rule.get("time_window_start", "00:00"), rule.get("time_window_end", "00:00"))
-                    if time_present and not time_outside_window and not entry.get("session_cap_end"):
-                        cap_min = rule.get("half_open_cap_minutes") if entry.get("is_half_open") else rule.get("time_cap_minutes")
-                        if cap_min:
-                            entry["session_cap_end"] = time.time() + cap_min * 60
-                            dirty = True
-                    if time_present and entry.get("session_cap_end"):
-                        remaining = entry["session_cap_end"] - time.time()
-                        if remaining <= 0:
-                            if await self._trip(appid, entry, rule, "time"):
+                try:
+                    cfg = await self._get_game_limits_config()
+                    state = await self._get_game_limits_state()
+                    dirty = False
+                    any_active = False
+                    for appid, entry in list(state.items()):
+                        if not entry.get("session_start"):
+                            continue
+                        any_active = True
+                        rule = self._effective_rule(cfg, appid)
+                        opens_present = rule.get("opens_enabled", False)
+                        time_present = rule.get("time_enabled", False) and not opens_present
+                        curfew_present = rule.get("curfew_enabled", False)
+                        curfew_trips = curfew_present and self._now_in_curfew(rule) and not (opens_present and rule.get("opens_bypass_curfew"))
+                        if curfew_trips:
+                            if await self._trip(appid, entry, rule, "curfew"):
                                 dirty = True
                             continue
-                        for thr in rule.get("warn_thresholds_minutes", [5, 1]):
-                            marker = f"warned_{thr}"
-                            if remaining <= thr * 60 and not entry.get(marker):
-                                entry[marker] = True
+                        # Lazy-cap: if a time-window was outside at launch but is now inside, set the cap now.
+                        time_outside_window = rule.get("time_window_enabled") and not self._now_in_window(rule.get("time_window_start", "00:00"), rule.get("time_window_end", "00:00"))
+                        if time_present and not time_outside_window and not entry.get("session_cap_end"):
+                            cap_min = rule.get("half_open_cap_minutes") if entry.get("is_half_open") else rule.get("time_cap_minutes")
+                            if cap_min:
+                                entry["session_cap_end"] = time.time() + cap_min * 60
                                 dirty = True
-                                await decky.emit("timeout_game_warning", {"appid": appid, "reason": "time_warn", "grace_remaining": int(max(0, remaining))})
-                if dirty:
-                    await self._save_game_limits_state(state)
-                if not any_active:
-                    return  # nothing running; task restarts on next choose_launch
-                await asyncio.sleep(1)
+                        if time_present and entry.get("session_cap_end"):
+                            remaining = entry["session_cap_end"] - time.time()
+                            if remaining <= 0:
+                                if await self._trip(appid, entry, rule, "time"):
+                                    dirty = True
+                                continue
+                            for thr in rule.get("warn_thresholds_minutes", [5, 1]):
+                                marker = f"warned_{thr}"
+                                if remaining <= thr * 60 and not entry.get(marker):
+                                    entry[marker] = True
+                                    dirty = True
+                                    await decky.emit("timeout_game_warning", {"appid": appid, "reason": "time_warn", "grace_remaining": int(max(0, remaining))})
+                    if dirty:
+                        await self._save_game_limits_state(state)
+                    if not any_active:
+                        return  # nothing running; task restarts on next choose_launch
+                    await asyncio.sleep(1)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    decky.logger.exception("Timeout: Game Limits handler tick failed; will retry next tick")
+                    await asyncio.sleep(1)
         except asyncio.CancelledError:
             decky.logger.info("Timeout: Game Limits handler stopped")
 
@@ -2100,10 +2149,11 @@ class Plugin:
                     changed = True
             decky.logger.info("Timeout: Renamed pomodoro_* settings keys → focus_*")
 
-        # Drop legacy timer_/alarm_/preset_ keys + stale overlay/prevent-sleep/pixel-shift keys removed in v2
+        # Drop legacy timer_/alarm_/preset_/pomodoro_ keys + stale overlay/prevent-sleep/pixel-shift keys removed in v2
         for _stale in list(updated.keys()):
             if (_stale.startswith("timer_") or _stale.startswith("alarm_")
-                    or _stale.startswith("preset_") or _stale in (
+                    or _stale.startswith("preset_") or _stale.startswith("pomodoro_")
+                    or _stale in (
                         "overlay_show_timers", "overlay_show_alarms", "snooze_duration",
                         "prevent_sleep_pomodoro", "prevent_sleep_alarms",
                         "prevent_sleep_alarms_window", "prevent_sleep_enabled",
@@ -2133,27 +2183,30 @@ class Plugin:
             changed = True
 
         # --- v2 strip: rename active-state blob pomodoro_state → focus_state (idempotent) ---
-        # Decky SettingsManager has no public delete; legacy key is nulled after copy.
-        if await self.settings_getSetting(SETTINGS_KEY_FOCUS, None) is None:
-            _legacy_state = await self.settings_getSetting("pomodoro_state", None)
-            if _legacy_state is not None:
-                await self.settings_setSetting(SETTINGS_KEY_FOCUS, _legacy_state)
-                await self.settings_setSetting("pomodoro_state", None)
-                changed = True
-                decky.logger.info("Timeout: Renamed pomodoro_state blob → focus_state")
+        try:
+            # Decky SettingsManager has no public delete; legacy key is nulled after copy.
+            if await self.settings_getSetting(SETTINGS_KEY_FOCUS, None) is None:
+                _legacy_state = await self.settings_getSetting("pomodoro_state", None)
+                if _legacy_state is not None:
+                    await self.settings_setSetting(SETTINGS_KEY_FOCUS, _legacy_state)
+                    await self.settings_setSetting("pomodoro_state", None)
+                    changed = True
+                    decky.logger.info("Timeout: Renamed pomodoro_state blob → focus_state")
 
 
-        # --- skeleton: seed new feature keys idempotently (B/C/D) ---
-        for _new_key in ("game_limits_config", "focus_default_tier",
-                          "focus_take_a_break_max_per_session", "parental_controls", "mindfulness"):
-            if _new_key not in updated:
-                updated[_new_key] = DEFAULT_SETTINGS[_new_key]
-                changed = True
+            # --- skeleton: seed new feature keys idempotently (B/C/D) ---
+            for _new_key in ("game_limits_config", "focus_default_tier",
+                              "focus_take_a_break_max_per_session", "parental_controls", "mindfulness"):
+                if _new_key not in updated:
+                    updated[_new_key] = DEFAULT_SETTINGS[_new_key]
+                    changed = True
 
-        if changed:
-            await self.settings_setSetting(SETTINGS_KEY_SETTINGS, updated)
-            await self.settings_commit()
-            decky.logger.info("Timeout: Migrated overlay settings schema")
+            if changed:
+                await self.settings_setSetting(SETTINGS_KEY_SETTINGS, updated)
+                await self.settings_commit()
+                decky.logger.info("Timeout: Migrated overlay settings schema")
+        except Exception:
+            decky.logger.exception("Timeout: Settings migration persistence failed; settings not written")
 
     # ==================== CORE SETTINGS METHODS ====================
 
@@ -2216,6 +2269,7 @@ class Plugin:
                  if hasattr(self, 'focus_task') and self.focus_task:
                      self.focus_task.cancel()
                  self.focus_task = self.loop.create_task(self._focus_handler())
+                 self.focus_task.add_done_callback(self._log_task_exception)
              return
         
         # Else "continue" (Report Missed)
@@ -2244,6 +2298,19 @@ class Plugin:
              await decky.emit("timeout_focus_updated", focus)
 
     # ==================== LIFECYCLE METHODS ====================
+
+    def _log_task_exception(self, task) -> None:
+        """Done-callback for supervised background tasks.
+
+        Logs (with traceback) any exception a background task died with, so a
+        crashed task is never silent. Cancellation is normal lifecycle, not an
+        error, and is ignored here.
+        """
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc:
+            decky.logger.exception("Timeout: background task died", exc_info=exc)
 
     async def _suspend_monitor(self):
         """Monitor for system suspend/resume events via time jumps."""
@@ -2304,8 +2371,18 @@ class Plugin:
         """Plugin initialization."""
         self.loop = asyncio.get_event_loop()
         
-        await self.settings_read()
-        await self._migrate_settings_schema()
+        # Startup stages are independently guarded: one failure must not skip
+        # the rest. Stage order: read settings -> migrate -> reconcile ->
+        # resume limits -> resume focus -> inhibitor sync -> spawn monitors.
+        try:
+            await self.settings_read()
+        except Exception:
+            decky.logger.exception("Timeout: Startup stage failed: read settings")
+
+        try:
+            await self._migrate_settings_schema()
+        except Exception:
+            decky.logger.exception("Timeout: Startup stage failed: migrate settings")
 
         # Reconcile stale focus state before any resume/enforcement.
         try:
@@ -2313,27 +2390,42 @@ class Plugin:
         except Exception:
             decky.logger.exception("Timeout: Focus state reconciliation failed")
 
-        current_time = time.time()
-        # Resume Focus if active
-        focus = await self._get_focus_state()
-        if focus.get("active") and focus.get("end_time"):
-            if focus["end_time"] > current_time:
-                decky.logger.info("Timeout: Resuming Focus session")
-                self.focus_task = self.loop.create_task(self._focus_handler())
-        
-        
-        # Resume Game Limits enforcement if any session is active
-        _gl_state = await self._get_game_limits_state()
-        if any(e.get("session_start") for e in _gl_state.values()):
-            decky.logger.info("Timeout: Resuming Game Limits enforcement")
-            self.game_limits_task = self.loop.create_task(self._game_limits_handler())
+        try:
+            # Resume Game Limits enforcement if any session is active
+            _gl_state = await self._get_game_limits_state()
+            if any(e.get("session_start") for e in _gl_state.values()):
+                decky.logger.info("Timeout: Resuming Game Limits enforcement")
+                self.game_limits_task = self.loop.create_task(self._game_limits_handler())
+                self.game_limits_task.add_done_callback(self._log_task_exception)
+        except Exception:
+            decky.logger.exception("Timeout: Startup stage failed: resume game limits")
+
+        try:
+            current_time = time.time()
+            # Resume Focus if active
+            focus = await self._get_focus_state()
+            if focus.get("active") and focus.get("end_time"):
+                if focus["end_time"] > current_time:
+                    decky.logger.info("Timeout: Resuming Focus session")
+                    self.focus_task = self.loop.create_task(self._focus_handler())
+                    self.focus_task.add_done_callback(self._log_task_exception)
+        except Exception:
+            # Also covers a corrupt end_time left behind if reconciliation failed.
+            decky.logger.exception("Timeout: Startup stage failed: resume focus")
+
+        # Check and activate sleep inhibitor if any alerts require it
+        try:
+            await self._update_sleep_inhibitor()
+        except Exception:
+            decky.logger.exception("Timeout: Startup stage failed: sleep inhibitor sync")
 
         # Start suspend monitor
-        self.suspend_monitor_task = self.loop.create_task(self._suspend_monitor())
-        
-        # Check and activate sleep inhibitor if any alerts require it
-        await self._update_sleep_inhibitor()
-        
+        try:
+            self.suspend_monitor_task = self.loop.create_task(self._suspend_monitor())
+            self.suspend_monitor_task.add_done_callback(self._log_task_exception)
+        except Exception:
+            decky.logger.exception("Timeout: Startup stage failed: spawn suspend monitor")
+
         decky.logger.info("Timeout: Plugin initialized successfully")
 
     async def factory_reset(self) -> bool:
@@ -2404,6 +2496,7 @@ class Plugin:
             
             # 10. Restart background tasks
             self.suspend_monitor_task = self.loop.create_task(self._suspend_monitor())
+            self.suspend_monitor_task.add_done_callback(self._log_task_exception)
             
             decky.logger.info("Timeout: Factory reset completed successfully")
             return True
@@ -2427,7 +2520,25 @@ class Plugin:
         # Cancel suspend monitor
         if self.suspend_monitor_task:
             self.suspend_monitor_task.cancel()
-        
+
+        # Release hardware/sound resources, each independently guarded
+        try:
+            await self._release_sleep_inhibitor()
+        except Exception:
+            decky.logger.exception("Timeout: Failed to release sleep inhibitor during unload")
+
+        try:
+            await self.stop_sound()
+        except Exception:
+            decky.logger.exception("Timeout: Failed to stop sound during unload")
+
+        # Wait for the cancelled tasks to finish; never propagate their
+        # cancellation/exceptions during teardown.
+        _cancelled = [t for t in (self.focus_task, self.game_limits_task,
+                                  self.suspend_monitor_task) if t is not None]
+        if _cancelled:
+            await asyncio.gather(*_cancelled, return_exceptions=True)
+
         decky.logger.info("Timeout: Plugin unloaded")
 
     async def _uninstall(self):
@@ -2436,4 +2547,8 @@ class Plugin:
 
     async def _migration(self):
         """Plugin migration."""
-        decky.logger.info("Timeout: first run (no legacy data to migrate)")
+        try:
+            decky.logger.info("Timeout: first run (no legacy data to migrate)")
+        except Exception:
+            # Loader already wraps _migration; never let logging kill it.
+            pass
