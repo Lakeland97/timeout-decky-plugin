@@ -1548,6 +1548,70 @@ class Plugin:
     async def _save_game_limits_state(self, state: dict):
         await self._settings_setSetting(SETTINGS_KEY_GAME_LIMITS, state)
 
+    @staticmethod
+    def _boot_timestamp() -> float:
+        """Unix timestamp of the current boot, or 0.0 when undeterminable.
+
+        CLOCK_BOOTTIME (Linux — the Deck) gives uptime including suspend, so
+        wall clock minus it is the boot instant. CLOCK_UPTIME / CLOCK_MONOTONIC
+        are best-effort fallbacks for non-Linux dev boxes (they exclude suspend,
+        so the computed instant drifts late after a long sleep). 0.0 means
+        'unknown' and callers leave state untouched rather than guessing."""
+        for clock in ("CLOCK_BOOTTIME", "CLOCK_UPTIME", "CLOCK_MONOTONIC"):
+            try:
+                return time.time() - time.clock_gettime(getattr(time, clock))
+            except Exception:
+                continue
+        return 0.0
+
+    async def _reconcile_game_limits_state(self) -> None:
+        """Reconcile stale game-limits sessions at boot (mirror of
+        _reconcile_focus_state).
+
+        A session_start left behind by a power-off mid-session is stale: the
+        game died with the machine. Left alone, the resumed enforcement task
+        treats the pre-outage session as live — cap already in the past ->
+        grace -> "Time's Up" at boot for a game that is not running, a kill
+        retry that finds no reaper (terminate_failed toast every 60s), and a
+        same-window relaunch killed by pre-outage state. Instead credit the
+        play the session could have had — min(now, session_cap_end) -
+        session_start, capped at the session-cap end — then close the session
+        fields. killed_on / adherence are left untouched; kill_retry_at /
+        kill_failed are session-scoped and drop with the session.
+
+        Only entries whose session_start predates THIS boot are closed: a
+        session started after boot (plugin reload mid-session) is live and
+        must stay enforced. Self-locking: callers must NOT already hold
+        SETTINGS_LOCK (the sole caller is a _main startup stage); the
+        read -> mutate -> save must not interleave with choose_launch /
+        report_* writes.
+        """
+        boot_ts = self._boot_timestamp()
+        if boot_ts <= 0:
+            return  # boot time undeterminable: leave state as-is
+        now = time.time()
+        async with SETTINGS_LOCK:
+            state = await self._get_game_limits_state()
+            dirty = False
+            for appid, entry in list(state.items()):
+                start = entry.get("session_start")
+                if not start or start >= boot_ts:
+                    continue  # no session, or one started after this boot (live)
+                cap_end = entry.get("session_cap_end")
+                end = min(now, cap_end) if cap_end else now
+                entry["time_consumed_today_sec"] = (entry.get("time_consumed_today_sec", 0)
+                                                    + max(0.0, end - start))
+                entry["session_start"] = None
+                entry["session_cap_end"] = None
+                entry["in_grace"] = False
+                entry["grace_until"] = None
+                entry.pop("kill_retry_at", None)
+                entry.pop("kill_failed", None)
+                dirty = True
+            if dirty:
+                await self._save_game_limits_state(state)
+                await self._emit_game_state()
+
     async def _emit_game_state(self) -> None:
         """Push the full game-limits state to the frontend. The
         'timeout_game_state' handler in useGameLimits.ts expects
@@ -1915,7 +1979,13 @@ class Plugin:
             if rule.get("opens_enabled") and not opens_outside_window:
                 spend = 1 if is_half else 2
                 if entry.get("credits_remaining", 0) < spend:
-                    return {"error": "no_credits"}
+                    # Blocked, not deferred: the game is already running, so a
+                    # refused start must terminate it through the same
+                    # blocked-launch path as cooldown/curfew — returning a bare
+                    # error let the un-sessioned game run unlimited.
+                    state[app_id] = entry
+                    await self._save_game_limits_state(state)
+                    return await self._block_launch(app_id, entry.get("app_name", ""), "no_credits")
                 entry["credits_remaining"] = entry.get("credits_remaining", 0) - spend
             entry["is_half_open"] = is_half
             entry["session_start"] = now
@@ -2069,42 +2139,52 @@ class Plugin:
                             if not entry.get("session_start"):
                                 continue
                             any_active = True
-                            # A verified kill failed earlier in this session:
-                            # the entry stays enforced (any_active keeps this
-                            # task alive) but the handler must not re-trip until
-                            # the retry deadline — _trip re-attempts the kill
-                            # once it passes.
-                            retry_at = entry.get("kill_retry_at")
-                            if retry_at and time.time() < retry_at:
-                                continue
-                            rule = self._effective_rule(cfg, appid)
-                            opens_present = rule.get("opens_enabled", False)
-                            time_present = rule.get("time_enabled", False) and not opens_present
-                            curfew_present = rule.get("curfew_enabled", False)
-                            curfew_trips = curfew_present and self._now_in_curfew(rule) and not (opens_present and rule.get("opens_bypass_curfew"))
-                            if curfew_trips:
-                                if await self._trip(appid, entry, rule, "curfew"):
-                                    dirty = True
-                                continue
-                            # Lazy-cap: if a time-window was outside at launch but is now inside, set the cap now.
-                            time_outside_window = rule.get("time_window_enabled") and not self._now_in_window(rule.get("time_window_start", "00:00"), rule.get("time_window_end", "00:00"))
-                            if time_present and not time_outside_window and not entry.get("session_cap_end"):
-                                cap_min = rule.get("half_open_cap_minutes") if entry.get("is_half_open") else rule.get("time_cap_minutes")
-                                if cap_min:
-                                    entry["session_cap_end"] = time.time() + cap_min * 60
-                                    dirty = True
-                            if time_present and entry.get("session_cap_end"):
-                                remaining = entry["session_cap_end"] - time.time()
-                                if remaining <= 0:
-                                    if await self._trip(appid, entry, rule, "time"):
+                            # Per-entry guard: one corrupt entry (a value the
+                            # sanitizer could not fix) must be logged and
+                            # skipped — never abort the tick for the other
+                            # entries. The bare per-tick except below skipped
+                            # ALL enforcement every second instead.
+                            try:
+                                # A verified kill failed earlier in this session:
+                                # the entry stays enforced (any_active keeps this
+                                # task alive) but the handler must not re-trip until
+                                # the retry deadline — _trip re-attempts the kill
+                                # once it passes.
+                                retry_at = entry.get("kill_retry_at")
+                                if retry_at and time.time() < retry_at:
+                                    continue
+                                rule = self._effective_rule(cfg, appid)
+                                opens_present = rule.get("opens_enabled", False)
+                                time_present = rule.get("time_enabled", False) and not opens_present
+                                curfew_present = rule.get("curfew_enabled", False)
+                                curfew_trips = curfew_present and self._now_in_curfew(rule) and not (opens_present and rule.get("opens_bypass_curfew"))
+                                if curfew_trips:
+                                    if await self._trip(appid, entry, rule, "curfew"):
                                         dirty = True
                                     continue
-                                for thr in rule.get("warn_thresholds_minutes", [5, 1]):
-                                    marker = f"warned_{thr}"
-                                    if remaining <= thr * 60 and not entry.get(marker):
-                                        entry[marker] = True
+                                # Lazy-cap: if a time-window was outside at launch but is now inside, set the cap now.
+                                time_outside_window = rule.get("time_window_enabled") and not self._now_in_window(rule.get("time_window_start", "00:00"), rule.get("time_window_end", "00:00"))
+                                if time_present and not time_outside_window and not entry.get("session_cap_end"):
+                                    cap_min = rule.get("half_open_cap_minutes") if entry.get("is_half_open") else rule.get("time_cap_minutes")
+                                    if cap_min:
+                                        entry["session_cap_end"] = time.time() + cap_min * 60
                                         dirty = True
-                                        await decky.emit("timeout_game_warning", {"appid": appid, "reason": "time_warn", "grace_remaining": int(max(0, remaining))})
+                                if time_present and entry.get("session_cap_end"):
+                                    remaining = entry["session_cap_end"] - time.time()
+                                    if remaining <= 0:
+                                        if await self._trip(appid, entry, rule, "time"):
+                                            dirty = True
+                                        continue
+                                    for thr in rule.get("warn_thresholds_minutes", [5, 1]):
+                                        marker = f"warned_{thr}"
+                                        if remaining <= thr * 60 and not entry.get(marker):
+                                            entry[marker] = True
+                                            dirty = True
+                                            await decky.emit("timeout_game_warning", {"appid": appid, "reason": "time_warn", "grace_remaining": int(max(0, remaining))})
+                            except Exception:
+                                decky.logger.exception(
+                                    f"Timeout: Game Limits enforcement failed for entry {appid}; skipping this entry this tick")
+                                continue
                         if dirty:
                             await self._save_game_limits_state(state)
                             await self._emit_game_state()
@@ -2318,18 +2398,32 @@ class Plugin:
         return await self._parental_locked(feature)
 
     def _normalize_parental_block(self, current_pc: dict, incoming: dict) -> dict:
-        """Copy of `incoming` with the stored-passcode invariant enforced: a
-        non-empty passcode is stored as a salted SHA-256 hash, with a
-        per-install salt generated on first set. Other sub-keys pass through."""
-        pc = json.loads(json.dumps(incoming))
-        if "passcode" in pc:
-            plaintext = str(pc.get("passcode") or "")
-            if plaintext:
-                salt = str(current_pc.get("passcode_salt") or "") or uuid.uuid4().hex
+        """Merge of `incoming` onto `current_pc` with the stored-passcode
+        invariant (D3) enforced.
+
+        Merge-on-current (F3): a partial block (e.g.
+        update_settings({parental_controls: {enabled: true}})) must preserve
+        `passcode`, `passcode_salt`, and every sibling key absent from
+        `incoming` — returning `incoming` alone erased the stored passcode and
+        locked the plugin to an empty passcode that nothing could unlock.
+
+        Passcode rule: a non-empty incoming passcode that is not already a
+        64-hex digest is plaintext and is stored as a salted SHA-256 hash
+        (same heuristic as the v3 boot migration — an imported backup carries
+        a stored digest and must never be re-hashed). An explicit empty
+        passcode clears the stored one."""
+        pc = json.loads(json.dumps(current_pc)) if isinstance(current_pc, dict) else {}
+        incoming = json.loads(json.dumps(incoming)) if isinstance(incoming, dict) else {}
+        pc.update(incoming)
+        if "passcode" in incoming:
+            raw = pc.get("passcode")
+            plaintext = "" if raw is None else str(raw)
+            if plaintext and not _PASSCODE_HASH_RE.match(plaintext):
+                salt = str(pc.get("passcode_salt") or "") or uuid.uuid4().hex
                 pc["passcode_salt"] = salt
                 pc["passcode"] = _hash_passcode(plaintext, salt)
             else:
-                pc["passcode"] = ""
+                pc["passcode"] = plaintext
         return pc
 
     async def _parental_locked(self, feature: str) -> bool:
@@ -2654,12 +2748,23 @@ class Plugin:
                 # Task 3 read-boundary sanitizer (one call) so a hostile or
                 # broken backup cannot plant task-killing values.
                 imported = self._sanitize_user_settings(data["user_settings"])
+                _current = await self._get_user_settings()
                 _dropped = [k for k in imported if await self._is_protected_setting_key(k)]
                 if _dropped:
-                    _current = await self._get_user_settings()
                     for k in _dropped:
                         imported[k] = copy.deepcopy(_current.get(k, DEFAULT_SETTINGS[k]))
                     decky.logger.info(f"Timeout: import_backup kept current values for parental-protected keys: {_dropped}")
+                # F6: D3 passcode invariant on the import path. Whatever the
+                # keep-current gate let through (locked -> the current block
+                # wins; unlocked -> the imported block) goes through the
+                # parental-block normalizer (merge-on-current), so a hand-edited
+                # plaintext passcode is hashed now instead of landing raw until
+                # the next boot's migration. When the lock kept the current
+                # block this is a no-op (its passcode is already a digest).
+                if isinstance(imported.get("parental_controls"), dict):
+                    imported["parental_controls"] = self._normalize_parental_block(
+                        _current.get("parental_controls", DEFAULT_SETTINGS["parental_controls"]),
+                        imported["parental_controls"])
                 # Merge with defaults to ensure new settings exist
                 async with SETTINGS_LOCK:
                     # Pre-import snapshot so a bad import is reversible
@@ -2715,6 +2820,38 @@ class Plugin:
             out = copy.deepcopy(default)
             for sub_key, sub_default in default.items():
                 if sub_key in value:
+                    if key == "game_limits_config" and sub_key == "per_game":
+                        # per_game overrides are coerced against the global
+                        # block's types — the global default dict IS the
+                        # template. per_game's own default is {}, so the
+                        # generic loop would pass every override value through
+                        # uncoerced and one bad value (e.g. grace_seconds: "60")
+                        # raises inside the per-tick enforcement loop. Only the
+                        # keys the override provides are kept (an override is a
+                        # Partial; _effective_rule layers it over global), null
+                        # values mean "inherit global" and pass through, and
+                        # sub-keys unknown to global pass through unchanged. A
+                        # non-dict override collapses to {} (its appid key
+                        # still marks the game as listed).
+                        _template = default["global"]
+                        _pg = value[sub_key]
+                        if not isinstance(_pg, dict):
+                            out[sub_key] = copy.deepcopy(sub_default)
+                            continue
+                        _coerced_pg = {}
+                        for _appid, _ov in _pg.items():
+                            if not isinstance(_ov, dict):
+                                _coerced_pg[_appid] = {}
+                                continue
+                            _coerced_pg[_appid] = {
+                                _ov_key: (_ov[_ov_key] if _ov[_ov_key] is None
+                                          else self._coerce_setting_value(
+                                              f"{key}.{sub_key}", _ov[_ov_key], _template[_ov_key]))
+                                if _ov_key in _template else _ov[_ov_key]
+                                for _ov_key in _ov
+                            }
+                        out[sub_key] = _coerced_pg
+                        continue
                     out[sub_key] = self._coerce_setting_value(
                         f"{key}.{sub_key}", value[sub_key], sub_default)
             for sub_key, sub_value in value.items():  # unknown sub-keys preserved
@@ -2734,7 +2871,7 @@ class Plugin:
                     continue
                 try:
                     out.append(elem_type(elem))
-                except (TypeError, ValueError):
+                except (TypeError, ValueError, OverflowError):
                     pass  # drop unusable elements (e.g. "five" in warn_thresholds)
             return out if out else list(default)
         if isinstance(default, int):  # bool defaults were handled above
@@ -3184,6 +3321,14 @@ class Plugin:
             await self._reconcile_focus_state()
         except Exception:
             decky.logger.exception("Timeout: Focus state reconciliation failed")
+
+        # Reconcile stale game-limits sessions (power-off mid-session) before
+        # any resume/enforcement, so the resume stage below only spawns for
+        # sessions that are actually live.
+        try:
+            await self._reconcile_game_limits_state()
+        except Exception:
+            decky.logger.exception("Timeout: Game Limits state reconciliation failed")
 
         try:
             # Resume Game Limits enforcement if any session is active
