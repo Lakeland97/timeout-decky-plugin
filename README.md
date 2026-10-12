@@ -3,7 +3,7 @@
 Play-time limits, focus modes, and parental controls for Steam Deck.
 
 ![Timeout](https://img.shields.io/badge/Decky-Plugin-blue)
-![Version](https://img.shields.io/badge/release-v0.1.0-green)
+![Version](https://img.shields.io/badge/release-v0.2.0-green)
 ![License](https://img.shields.io/badge/license-BSD--3--Clause-blue)
 
 > **Timeout is in early development.**
