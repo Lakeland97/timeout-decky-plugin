@@ -217,7 +217,7 @@ class Plugin:
     missed_items: list = []
     last_tick: float = 0
 
-    # Count of settings_setSetting calls; _main snapshots the delta to decide
+    # Count of _settings_setSetting calls; _main snapshots the delta to decide
     # whether a startup-stage backup is warranted.
     _settings_write_count: int = 0
 
@@ -230,7 +230,7 @@ class Plugin:
 
     async def get_missed_items(self) -> list:
         """Get list of missed items (shape-guarded; read-only, no lock needed)."""
-        return self._sanitize_missed_items(await self.settings_getSetting("missed_alerts_items", []))
+        return self._sanitize_missed_items(await self._settings_getSetting("missed_alerts_items", []))
 
     def _sanitize_missed_items(self, raw) -> list:
         """Read-boundary guard for the missed-alerts list: a list of dicts with a
@@ -258,7 +258,7 @@ class Plugin:
     async def clear_missed_items(self) -> bool:
         """Clear all missed items."""
         async with SETTINGS_LOCK:
-            await self.settings_setSetting("missed_alerts_items", [])
+            await self._settings_setSetting("missed_alerts_items", [])
         await self._emit_missed_update()
         return True
 
@@ -298,7 +298,7 @@ class Plugin:
             cutoff = time.time() - window
             missed = [i for i in missed if i["missed_at"] > cutoff]
 
-            await self.settings_setSetting("missed_alerts_items", missed)
+            await self._settings_setSetting("missed_alerts_items", missed)
 
         # Notify frontend
         await self._emit_missed_update()
@@ -1171,7 +1171,7 @@ class Plugin:
             
             # Save reset stats immediately to prevent zeroed stats on next read
             settings["focus_stats"] = stats
-            await self.settings_setSetting(SETTINGS_KEY_SETTINGS, settings)
+            await self._settings_setSetting(SETTINGS_KEY_SETTINGS, settings)
             
         return stats
 
@@ -1210,7 +1210,7 @@ class Plugin:
             # writer's keys aren't clobbered by a stale copy)
             settings = await self._get_user_settings()
             settings["focus_stats"] = stats
-            await self.settings_setSetting(SETTINGS_KEY_SETTINGS, settings)
+            await self._settings_setSetting(SETTINGS_KEY_SETTINGS, settings)
 
     async def reset_focus_stats(self) -> bool:
         """Reset all Focus statistics."""
@@ -1232,7 +1232,7 @@ class Plugin:
         async with SETTINGS_LOCK:
             settings = await self._get_user_settings()
             settings["focus_stats"] = defaults
-            await self.settings_setSetting(SETTINGS_KEY_SETTINGS, settings)
+            await self._settings_setSetting(SETTINGS_KEY_SETTINGS, settings)
         return True
 
     async def get_focus_state(self) -> dict:
@@ -1402,7 +1402,7 @@ class Plugin:
             "end_time": None,
             "duration": 0
         }
-        raw = await self.settings_getSetting(SETTINGS_KEY_FOCUS, default)
+        raw = await self._settings_getSetting(SETTINGS_KEY_FOCUS, default)
         if not isinstance(raw, dict):
             return default
         state = dict(raw)  # copy: normalization must not mutate the store in place
@@ -1417,7 +1417,7 @@ class Plugin:
         return state
 
     async def _save_focus_state(self, state: dict):
-        await self.settings_setSetting(SETTINGS_KEY_FOCUS, state)
+        await self._settings_setSetting(SETTINGS_KEY_FOCUS, state)
 
     async def _reconcile_focus_state(self) -> None:
         """Reconcile stale focus state at boot.
@@ -1462,7 +1462,7 @@ class Plugin:
     # ==================== GAME LIMITS METHODS (sub-project B) ====================
 
     async def _get_game_limits_state(self) -> dict:
-        raw = await self.settings_getSetting(SETTINGS_KEY_GAME_LIMITS, {})
+        raw = await self._settings_getSetting(SETTINGS_KEY_GAME_LIMITS, {})
         if not isinstance(raw, dict):
             return {}
         state = {}
@@ -1486,7 +1486,7 @@ class Plugin:
         return state
 
     async def _save_game_limits_state(self, state: dict):
-        await self.settings_setSetting(SETTINGS_KEY_GAME_LIMITS, state)
+        await self._settings_setSetting(SETTINGS_KEY_GAME_LIMITS, state)
 
     async def _emit_game_state(self) -> None:
         """Push the full game-limits state to the frontend. The
@@ -1573,7 +1573,7 @@ class Plugin:
             if "per_game" in partial:
                 cfg["per_game"] = partial["per_game"]
             us["game_limits_config"] = cfg
-            await self.settings_setSetting(SETTINGS_KEY_SETTINGS, us)
+            await self._settings_setSetting(SETTINGS_KEY_SETTINGS, us)
             await decky.emit("timeout_settings_updated", us)
             if break_streak:
                 await decky.emit("timeout_game_streak", {"current": 0, "longest": us.get("game_limits_longest_streak", 0)})
@@ -1685,7 +1685,7 @@ class Plugin:
             if cur > us.get("game_limits_longest_streak", 0):
                 us["game_limits_longest_streak"] = cur
             us["game_limits_last_streak_date"] = today
-            await self.settings_setSetting(SETTINGS_KEY_SETTINGS, us)
+            await self._settings_setSetting(SETTINGS_KEY_SETTINGS, us)
             await decky.emit("timeout_game_streak", {"current": cur, "longest": us["game_limits_longest_streak"]})
 
     async def _break_game_limits_streak(self):
@@ -1693,7 +1693,7 @@ class Plugin:
         would deadlock: both call sites run inside locked sections)."""
         us = await self._get_user_settings()
         us["game_limits_current_streak"] = 0
-        await self.settings_setSetting(SETTINGS_KEY_SETTINGS, us)
+        await self._settings_setSetting(SETTINGS_KEY_SETTINGS, us)
         await decky.emit("timeout_game_streak", {"current": 0, "longest": us.get("game_limits_longest_streak", 0)})
 
     async def reset_game_limits_streak(self) -> bool:
@@ -1702,7 +1702,7 @@ class Plugin:
             us["game_limits_current_streak"] = 0
             us["game_limits_longest_streak"] = 0
             us["game_limits_last_streak_date"] = ""
-            await self.settings_setSetting(SETTINGS_KEY_SETTINGS, us)
+            await self._settings_setSetting(SETTINGS_KEY_SETTINGS, us)
             await decky.emit("timeout_game_streak", {"current": 0, "longest": 0})
         return True
 
@@ -2130,7 +2130,7 @@ class Plugin:
         """Detect an unparseable settings file and restore it from <file>.bak.
 
         Called in _main stage 0 (before the SettingsManager.read() result is
-        trusted) and from settings_read's cheap guard. Returns True if a restore
+        trusted) and from _settings_read's cheap guard. Returns True if a restore
         was performed. On any failure (no backup, unreadable backup, copy error)
         logs loudly and leaves the corrupt file in place so the plugin proceeds
         with defaults.
@@ -2211,7 +2211,7 @@ class Plugin:
             if accepted:
                 current.update(accepted)
                 current = self._sanitize_user_settings(current)
-                await self.settings_setSetting(SETTINGS_KEY_SETTINGS, current)
+                await self._settings_setSetting(SETTINGS_KEY_SETTINGS, current)
 
         # Update sleep inhibitor if prevent_sleep settings changed
         if any(k in new_settings for k in ("focus_prevent_sleep",)):
@@ -2299,7 +2299,7 @@ class Plugin:
             if "mode" in partial:
                 pc["mode"] = partial["mode"]
             us["parental_controls"] = pc
-            await self.settings_setSetting(SETTINGS_KEY_SETTINGS, us)
+            await self._settings_setSetting(SETTINGS_KEY_SETTINGS, us)
             await decky.emit("timeout_settings_updated", us)
         return pc
 
@@ -2322,7 +2322,7 @@ class Plugin:
             pc2 = json.loads(json.dumps(pc))
             pc2["mode"] = "admin"
             us["parental_controls"] = pc2
-            await self.settings_setSetting(SETTINGS_KEY_SETTINGS, us)
+            await self._settings_setSetting(SETTINGS_KEY_SETTINGS, us)
             await decky.emit("timeout_settings_updated", us)
             return {"ok": True, "controls": pc2}
         return {"ok": False}
@@ -2333,7 +2333,7 @@ class Plugin:
             pc = json.loads(json.dumps(us.get("parental_controls", DEFAULT_SETTINGS["parental_controls"])))
             pc["mode"] = "self"
             us["parental_controls"] = pc
-            await self.settings_setSetting(SETTINGS_KEY_SETTINGS, us)
+            await self._settings_setSetting(SETTINGS_KEY_SETTINGS, us)
             await decky.emit("timeout_settings_updated", us)
         return True
 
@@ -2365,7 +2365,7 @@ class Plugin:
                         triggers[tid] = {"enabled": bool(tp["enabled"])}
                 mf["triggers"] = triggers
             us["mindfulness"] = mf
-            await self.settings_setSetting(SETTINGS_KEY_SETTINGS, us)
+            await self._settings_setSetting(SETTINGS_KEY_SETTINGS, us)
             await decky.emit("timeout_settings_updated", us)
         return mf
 
@@ -2533,7 +2533,7 @@ class Plugin:
                     # Pre-import snapshot so a bad import is reversible
                     await self._backup_settings_file()
                     settings_to_save = {**DEFAULT_SETTINGS, **imported}
-                    await self.settings_setSetting(SETTINGS_KEY_SETTINGS, settings_to_save)
+                    await self._settings_setSetting(SETTINGS_KEY_SETTINGS, settings_to_save)
                 await decky.emit("timeout_settings_updated", settings_to_save)
             
             # Emit general event so frontend can trigger full refresh
@@ -2636,7 +2636,7 @@ class Plugin:
         return value  # unknown default shape: pass through
 
     async def _get_user_settings(self) -> dict:
-        saved = await self.settings_getSetting(SETTINGS_KEY_SETTINGS, {})
+        saved = await self._settings_getSetting(SETTINGS_KEY_SETTINGS, {})
         if not isinstance(saved, dict):
             saved = {}
         # Single coercion boundary: defaults-merged, type-checked, clamped values
@@ -2687,7 +2687,7 @@ class Plugin:
     async def _migrate_settings_schema_locked(self):
         """Lock-free impl — caller must hold SETTINGS_LOCK (the write below is a
         user-settings read-modify-write)."""
-        saved = await self.settings_getSetting(SETTINGS_KEY_SETTINGS, {})
+        saved = await self._settings_getSetting(SETTINGS_KEY_SETTINGS, {})
         if not isinstance(saved, dict):
             return
 
@@ -2805,11 +2805,11 @@ class Plugin:
         # --- v2 strip: rename active-state blob pomodoro_state → focus_state (idempotent) ---
         try:
             # Decky SettingsManager has no public delete; legacy key is nulled after copy.
-            if await self.settings_getSetting(SETTINGS_KEY_FOCUS, None) is None:
-                _legacy_state = await self.settings_getSetting("pomodoro_state", None)
+            if await self._settings_getSetting(SETTINGS_KEY_FOCUS, None) is None:
+                _legacy_state = await self._settings_getSetting("pomodoro_state", None)
                 if _legacy_state is not None:
-                    await self.settings_setSetting(SETTINGS_KEY_FOCUS, _legacy_state)
-                    await self.settings_setSetting("pomodoro_state", None)
+                    await self._settings_setSetting(SETTINGS_KEY_FOCUS, _legacy_state)
+                    await self._settings_setSetting("pomodoro_state", None)
                     changed = True
                     decky.logger.info("Timeout: Renamed pomodoro_state blob → focus_state")
 
@@ -2843,14 +2843,14 @@ class Plugin:
                     decky.logger.info("Timeout: Hashed stored parental passcode (D3 migration)")
 
             if changed:
-                await self.settings_setSetting(SETTINGS_KEY_SETTINGS, updated)
+                await self._settings_setSetting(SETTINGS_KEY_SETTINGS, updated)
                 decky.logger.info("Timeout: Migrated overlay settings schema")
         except Exception:
             decky.logger.exception("Timeout: Settings migration persistence failed; settings not written")
 
     # ==================== CORE SETTINGS METHODS ====================
 
-    async def settings_read(self):
+    async def _settings_read(self):
         decky.logger.info('Reading settings')
         raw = settings.read()
         # Cheap guard: an empty result while the file on disk is non-empty
@@ -2864,16 +2864,16 @@ class Plugin:
             decky.logger.exception("Timeout: Settings read recovery failed")
         return raw
 
-    async def settings_commit(self):
+    async def _settings_commit(self):
         decky.logger.info('Saving settings')
         return settings.commit()
 
-    async def settings_getSetting(self, key: str, defaults):
+    async def _settings_getSetting(self, key: str, defaults):
         return settings.getSetting(key, defaults)
 
-    async def settings_setSetting(self, key: str, value):
+    async def _settings_setSetting(self, key: str, value):
         # The loader's SettingsManager commits the file on every set, so a
-        # standalone settings_commit() after a set is redundant (removed).
+        # standalone _settings_commit() after a set is redundant (removed).
         self._settings_write_count += 1
         return settings.setSetting(key, value)
 
@@ -3038,7 +3038,7 @@ class Plugin:
             decky.logger.exception("Timeout: Startup stage failed: restore corrupt settings")
 
         try:
-            await self.settings_read()
+            await self._settings_read()
         except Exception:
             decky.logger.exception("Timeout: Startup stage failed: read settings")
 
@@ -3132,16 +3132,16 @@ class Plugin:
             async with SETTINGS_LOCK:
                 await self._backup_settings_file()
                 _reset_settings = copy.deepcopy(DEFAULT_SETTINGS)
-                await self.settings_setSetting(SETTINGS_KEY_SETTINGS, _reset_settings)
-                await self.settings_setSetting(SETTINGS_KEY_FOCUS, {
+                await self._settings_setSetting(SETTINGS_KEY_SETTINGS, _reset_settings)
+                await self._settings_setSetting(SETTINGS_KEY_FOCUS, {
                     "active": False,
                     "is_break": False,
                     "current_session": 1,
                     "end_time": None,
                     "duration": 0
                 })
-                await self.settings_setSetting(SETTINGS_KEY_GAME_LIMITS, {})
-                await self.settings_setSetting("missed_alerts_items", [])
+                await self._settings_setSetting(SETTINGS_KEY_GAME_LIMITS, {})
+                await self._settings_setSetting("missed_alerts_items", [])
             
             # 7. Emit update events to frontend
             await decky.emit("timeout_settings_updated", _reset_settings)

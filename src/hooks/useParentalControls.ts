@@ -21,11 +21,22 @@ export function useParentalControls() {
         try { setControls(await getParentalCall()); } catch (e) { console.error('parental load:', e); }
     }, []);
 
-    const update = useCallback(async (partial: Partial<ParentalControls>) => {
+    // Returns the updated controls on success, or null on failure (RPC
+    // rejection or an {error} response) so callers can surface failures —
+    // e.g. the passcode Save button must not clear its input on failure.
+    const update = useCallback(async (partial: Partial<ParentalControls>): Promise<ParentalControls | null> => {
         try {
             const r = await updateParentalCall(partial);
-            if (!('error' in r)) setControls(r);
-        } catch (e) { console.error('parental update:', e); }
+            if ('error' in r) {
+                console.error('parental update:', r.error);
+                return null;
+            }
+            setControls(r);
+            return r;
+        } catch (e) {
+            console.error('parental update:', e);
+            return null;
+        }
     }, []);
 
     const verify = useCallback(async (code: string) => {
