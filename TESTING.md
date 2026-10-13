@@ -71,14 +71,16 @@ Setup: Game Limits settings → enable the feature, use the **installed-games pi
 
 ## 4. Self-control mode lock holds
 
-1. Action: Parental controls → set a passcode and enable controls; lock (self mode).
-   → Expected: The passcode is stored only as a salted SHA-256 hash (household-grade — see known limitations). Locked features (game limits, focus tier, take-a-break, mindfulness) are enforced by the backend even if a control still appears editable (e.g. the take-a-break cap slider stays writable while locked).
-2. Action: Try to change each locked feature from the settings UI.
+1. Action: Parental controls → try to enable controls **before** setting a passcode (toggle disabled with "Set a passcode first"; from the CEF console call `update_parental_controls({"enabled": true})` or `update_settings({"parental_controls": {"enabled": true}})` with no passcode set).
+   → Expected: Enabling without a passcode is **refused with a message** (`{"error": "passcode_required"}`); controls stay off. Clearing the passcode while controls are enabled (self mode) is likewise refused (`{"error": "passcode_clear_while_enabled"}` / protected keys dropped) — a user can never lock themselves out by not setting a password.
+2. Action: Set a passcode, then enable controls; lock (self mode).
+   → Expected: Enabling **with** a passcode works — the passcode is stored only as a salted SHA-256 hash (household-grade — see known limitations). Locked features (game limits, focus tier, take-a-break, mindfulness) are enforced by the backend even if a control still appears editable (e.g. the take-a-break cap slider stays writable while locked). Inputs are trimmed: a whitespace-only passcode counts as empty.
+3. Action: Try to change each locked feature from the settings UI.
    → Expected: Changes are refused (no unlock → no change).
-3. Action: From the CEF console (README → CEF Debugging), attempt `update_settings` with protected keys, e.g. change `game_limits_config` or `parental_controls`.
+4. Action: From the CEF console (README → CEF Debugging), attempt `update_settings` with protected keys, e.g. change `game_limits_config` or `parental_controls`.
    → Expected: Protected keys are **dropped**, not applied; the log records `update_settings dropped parental-protected keys`. The generic settings RPC cannot bypass the gated setters.
-4. Action: Unlock with a wrong passcode, then the correct one.
-   → Expected: Wrong → refused; correct → mode flips to admin and locked features become editable.
+5. Action: Unlock with a wrong passcode, then the correct one.
+   → Expected: Wrong → refused; correct → mode flips to admin and locked features become editable. After unlocking, setting a NEW passcode still works (recovery path), and an old install already stuck in enabled+empty-passcode can still load settings and set a passcode to repair itself.
 
 ## 5. Mindfulness pauses on every trigger
 
@@ -144,8 +146,6 @@ Setup: Mindfulness settings → enable the pause globally and enable all five tr
 ## Known limitations
 
 - **Passcode is household-grade.** It is stored as a salted SHA-256 hash on-device — honest friction against casual changes, not account-grade authentication. Anyone with the Deck can recover or replace it; do not treat it as a security boundary.
-- **Enabling controls with an empty passcode leaves no unlock path** (pre-existing). Always set a passcode *before* enabling the lock.
-- **Whitespace-only passcodes are accepted, not rejected** (pre-existing semantics): a passcode of only spaces is set and must be typed exactly to unlock, so avoid them.
 - **A zero-gaming day zeroes the game-limits streak** (pre-existing semantics): the streak counts consecutive days with at least one adherent session.
 - **A day that ends in a verified cap/curfew kill is streak-neutral** (new in this build, per spec): hitting the limit fairly neither increments nor breaks the streak. Runaway days (kill could not be verified) still break it.
 - **Backup paths are confined to `~/Documents` and `~/Downloads`.** The export RPC also accepts an `allow_overwrite` flag, but it only ever applies inside that same allowlist — it cannot reach other paths.

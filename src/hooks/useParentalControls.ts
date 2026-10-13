@@ -47,11 +47,14 @@ export function useParentalControls() {
         } catch (e) { console.error('parental verify:', e); return false; }
     }, []);
 
+    // Returns whether the backend engaged the lock (false when it refused,
+    // e.g. no passcode set — a lock with no passcode could never be unlocked).
     const lock = useCallback(async () => {
         try {
-            await lockParentalCall();
-            setControls(c => ({ ...c, mode: 'self' }));
-        } catch (e) { console.error('parental lock:', e); }
+            const ok = await lockParentalCall();
+            if (ok) setControls(c => ({ ...c, mode: 'self' }));
+            return ok;
+        } catch (e) { console.error('parental lock:', e); return false; }
     }, []);
 
     useEffect(() => {
