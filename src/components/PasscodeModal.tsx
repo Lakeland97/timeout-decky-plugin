@@ -15,8 +15,15 @@ const UnlockModal = ({ onUnlocked, closeModal }: { onUnlocked?: () => void; clos
     const [code, setCode] = useState('');
     const [err, setErr] = useState('');
     const submit = async () => {
-        const ok = await verifyParentalCall(code);
-        if (ok) {
+        const raw = code;
+        // Trim before submit — the backend trims on its side too, so
+        // surrounding whitespace is never part of the passcode.
+        let r = await verifyParentalCall(raw.trim());
+        // Legacy fallback: a passcode stored WITH surrounding whitespace (set
+        // before trim existed) only matches the untrimmed input — retry raw so
+        // this trim cannot strand an old install in a locked state.
+        if (!r.ok && raw !== raw.trim()) r = await verifyParentalCall(raw);
+        if (r.ok) {
             closeModal?.();
             onUnlocked?.();
         } else {

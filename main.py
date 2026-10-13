@@ -78,6 +78,70 @@ def _hash_passcode(passcode: str, salt: str) -> str:
     """Salted SHA-256 hash of a parental passcode (D3)."""
     return hashlib.sha256((salt + str(passcode)).encode()).hexdigest()
 
+
+def _is_passcode_lockout(pc) -> bool:
+    """True when a parental block IS a self-lockout: controls enabled in self
+    mode with no usable passcode (empty or whitespace-only). In that state
+    verify_parental_passcode can never succeed, factory_reset and
+    import_backup refuse while locked, and recovery needs Desktop Mode — so a
+    user must never be allowed to CREATE one (project rule: no self-lockout
+    by not setting a password). Existing legacy installs in this state are
+    not frozen: reads pass through and writes that do not make the state
+    worse stay allowed (set a passcode / turn controls off = recovery).
+
+    Lock-free: a pure predicate over an already-read block — never acquires
+    SETTINGS_LOCK (non-reentrant), so callers may hold it."""
+    if not isinstance(pc, dict):
+        return False
+    return (bool(pc.get("enabled")) and pc.get("mode") == "self"
+            and not str(pc.get("passcode") or "").strip())
+
+
+def _parental_lock_engaged(pc) -> bool:
+    """True when the parental lock is genuinely engaged on a block: enabled in
+    self mode WITH a stored credential. Enabled+self with an EMPTY passcode is
+    not engaged — it is a legacy _is_passcode_lockout state with nothing to
+    authenticate against, and letting its parental block through
+    update_settings is the recovery path (set a passcode), not a bypass.
+
+    Used ONLY by update_settings' protected-key drop for the parental block.
+    _is_protected_setting_key keeps its strict enabled+self reading because
+    factory_reset and import_backup gate on it and their semantics must not
+    change.
+
+    Lock-free: a pure predicate over an already-read block."""
+    if not isinstance(pc, dict):
+        return False
+    return (bool(pc.get("enabled")) and pc.get("mode") == "self"
+            and bool(str(pc.get("passcode") or "").strip()))
+
+
+def _passcode_lockout_error(current_pc, incoming, merged_pc):
+    """No-self-lockout guard, shared by both parental write entry points
+    (update_parental_controls and update_settings). Returns the error key to
+    reject with, or None to allow.
+
+    A write is refused only when it would CREATE a lockout from a state that
+    was not one already: merged is _is_passcode_lockout and current is not.
+    That single rule covers the enable-transition guard (enabled false->true
+    with mode "self" and no effective passcode -> "passcode_required"), the
+    clear-while-enabled guard (passcode emptied while the merged block stays
+    enabled+self -> "passcode_clear_while_enabled"), and the same via a mode
+    flip to "self". A legacy install already in the lockout state keeps
+    working: refusing writes that leave current unchanged would freeze the
+    broken state, which invariant 3 forbids.
+
+    Lock-free: a pure predicate over already-merged dicts; both callers
+    invoke it inside their SETTINGS_LOCK section."""
+    if not _is_passcode_lockout(merged_pc) or _is_passcode_lockout(current_pc):
+        return None
+    if isinstance(incoming, dict) and "passcode" in incoming:
+        cleared = not str(incoming.get("passcode") or "").strip()
+        had_credential = bool(str((current_pc or {}).get("passcode") or "").strip())
+        if cleared and had_credential:
+            return "passcode_clear_while_enabled"
+    return "passcode_required"
+
 # Settings keys
 SETTINGS_KEY_SETTINGS = "user_settings"
 SETTINGS_KEY_FOCUS = "focus_state"
@@ -2341,7 +2405,20 @@ class Plugin:
             accepted: dict = {}
             dropped: list = []
             for key, value in new_settings.items():
-                if await self._is_protected_setting_key(key):
+                if key == "parental_controls":
+                    # Parental block gate: drop it only while the lock is
+                    # genuinely engaged (enabled+self+credential). A legacy
+                    # enabled+empty-passcode block must stay writable — set a
+                    # passcode is its recovery path (see _parental_lock_engaged;
+                    # _is_protected_setting_key's stricter reading backs
+                    # factory_reset/import_backup and is unchanged here).
+                    _pc_now = current.get("parental_controls",
+                                          DEFAULT_SETTINGS["parental_controls"])
+                    if _parental_lock_engaged(_pc_now):
+                        dropped.append(key)
+                    else:
+                        accepted[key] = value
+                elif await self._is_protected_setting_key(key):
                     dropped.append(key)
                 else:
                     accepted[key] = value
@@ -2351,9 +2428,20 @@ class Plugin:
                 # Stored-passcode invariant on this write path too: anything
                 # landing in parental_controls.passcode is a salted SHA-256
                 # hash (D3), never plaintext.
-                accepted["parental_controls"] = self._normalize_parental_block(
-                    current.get("parental_controls", DEFAULT_SETTINGS["parental_controls"]),
-                    accepted["parental_controls"])
+                _pc_now = current.get("parental_controls",
+                                      DEFAULT_SETTINGS["parental_controls"])
+                _pc_merged = self._normalize_parental_block(
+                    _pc_now, accepted["parental_controls"])
+                # No-self-lockout guard (invariant 1's second entry point):
+                # refuse a write that would create enabled+self+empty-passcode
+                # from a non-lockout state, same {"error": ...} shape as
+                # update_parental_controls. Nothing has been persisted yet.
+                _err = _passcode_lockout_error(_pc_now, accepted["parental_controls"],
+                                               _pc_merged)
+                if _err:
+                    decky.logger.warning(f"Timeout: update_settings refused parental_controls: {_err}")
+                    return {"error": _err}
+                accepted["parental_controls"] = _pc_merged
             if accepted:
                 current.update(accepted)
                 current = self._sanitize_user_settings(current)
@@ -2381,9 +2469,11 @@ class Plugin:
         parental lock is currently active for its domain.
 
         Protected: parental_controls (locked while enabled in self mode — the
-        same condition update_parental_controls enforces), game_limits_config /
-        mindfulness / focus_default_tier (locked while the corresponding
-        feature is in locked_features, via _parental_locked).
+        strict reading: it backs factory_reset/import_backup, whose semantics
+        must not change; update_settings uses _parental_lock_engaged instead,
+        which also lets the legacy enabled+empty-passcode state recover),
+        game_limits_config / mindfulness / focus_default_tier (locked while the
+        corresponding feature is in locked_features, via _parental_locked).
 
         Lock-free: only reads through _get_user_settings/_parental_locked, so
         callers may hold SETTINGS_LOCK."""
@@ -2410,14 +2500,16 @@ class Plugin:
         Passcode rule: a non-empty incoming passcode that is not already a
         64-hex digest is plaintext and is stored as a salted SHA-256 hash
         (same heuristic as the v3 boot migration — an imported backup carries
-        a stored digest and must never be re-hashed). An explicit empty
-        passcode clears the stored one."""
+        a stored digest and must never be re-hashed). Inputs are .strip()ed
+        before the hash/store decision, so whitespace-only == empty. An
+        explicit empty passcode clears the stored one (the no-self-lockout
+        guard at the entry points decides whether that clear is allowed)."""
         pc = json.loads(json.dumps(current_pc)) if isinstance(current_pc, dict) else {}
         incoming = json.loads(json.dumps(incoming)) if isinstance(incoming, dict) else {}
         pc.update(incoming)
         if "passcode" in incoming:
             raw = pc.get("passcode")
-            plaintext = "" if raw is None else str(raw)
+            plaintext = "" if raw is None else str(raw).strip()
             if plaintext and not _PASSCODE_HASH_RE.match(plaintext):
                 salt = str(pc.get("passcode_salt") or "") or uuid.uuid4().hex
                 pc["passcode_salt"] = salt
@@ -2439,13 +2531,13 @@ class Plugin:
         # Gated: once enabled in self mode, you must unlock (admin) to change it.
         async with SETTINGS_LOCK:
             us = await self._get_user_settings()
-            pc = json.loads(json.dumps(us.get("parental_controls", DEFAULT_SETTINGS["parental_controls"])))
-            if pc.get("enabled") and pc.get("mode") == "self":
-                return {"error": "parental_locked"}
+            current_pc = json.loads(json.dumps(us.get("parental_controls", DEFAULT_SETTINGS["parental_controls"])))
+            pc = json.loads(json.dumps(current_pc))
             if "enabled" in partial:
                 pc["enabled"] = bool(partial["enabled"])
             if "passcode" in partial:
-                plaintext = str(partial["passcode"] or "")
+                # Trim before the hash/store decision (whitespace-only == empty).
+                plaintext = str(partial["passcode"] or "").strip()
                 if plaintext:
                     # D3: store only the salted SHA-256 hash; the per-install
                     # salt is generated on the first set and then reused.
@@ -2458,6 +2550,23 @@ class Plugin:
                 pc["locked_features"] = list(partial["locked_features"])
             if "mode" in partial:
                 pc["mode"] = partial["mode"]
+            # No-self-lockout guard runs BEFORE the parental_locked gate so the
+            # specific error keys surface: a write that would create
+            # enabled+self+empty-passcode from a non-lockout state is refused
+            # ("passcode_required" / "passcode_clear_while_enabled"); a legacy
+            # install already in that state is not frozen (invariant 3).
+            _err = _passcode_lockout_error(current_pc, partial, pc)
+            if _err:
+                decky.logger.warning(f"Timeout: update_parental_controls refused: {_err}")
+                return {"error": _err}
+            # Legacy exception: an enabled+self block with an EMPTY passcode
+            # can never be unlocked (verify can never succeed), so treating it
+            # as locked would freeze the broken state — its writes are the
+            # recovery path (set a passcode / turn controls off). With a
+            # credential present the lock holds exactly as before.
+            if (current_pc.get("enabled") and current_pc.get("mode") == "self"
+                    and str(current_pc.get("passcode") or "").strip()):
+                return {"error": "parental_locked"}
             us["parental_controls"] = pc
             await self._settings_setSetting(SETTINGS_KEY_SETTINGS, us)
             await decky.emit("timeout_settings_updated", us)
@@ -2472,26 +2581,46 @@ class Plugin:
 
     async def _verify_parental_passcode_impl(self, code: str) -> dict:
         """Lock-free impl — caller must hold SETTINGS_LOCK. Compares the salted
-        SHA-256 hash (D3); on success flips mode to admin and persists."""
+        SHA-256 hash (D3); on success flips mode to admin and persists.
+
+        Input handling: the typed code is trimmed before hashing (whitespace is
+        not part of the passcode — matches the trim on the save side). If the
+        untrimmed form differs, it is tried as a fallback candidate so a passcode
+        stored WITH surrounding whitespace before this trim existed still
+        unlocks (no new lockout for legacy installs)."""
         us = await self._get_user_settings()
         pc = us.get("parental_controls", DEFAULT_SETTINGS["parental_controls"])
         if not pc.get("enabled"):
             return {"ok": True, "controls": pc}
         stored = str(pc.get("passcode") or "")
-        if stored and _hash_passcode(code, str(pc.get("passcode_salt") or "")) == stored:
-            pc2 = json.loads(json.dumps(pc))
-            pc2["mode"] = "admin"
-            us["parental_controls"] = pc2
-            await self._settings_setSetting(SETTINGS_KEY_SETTINGS, us)
-            await decky.emit("timeout_settings_updated", us)
-            return {"ok": True, "controls": pc2}
+        if stored:
+            typed = "" if code is None else str(code)
+            candidates = [typed.strip()]
+            if typed != typed.strip():
+                candidates.append(typed)  # legacy untrimmed input
+            salt = str(pc.get("passcode_salt") or "")
+            for candidate in candidates:
+                if _hash_passcode(candidate, salt) == stored:
+                    pc2 = json.loads(json.dumps(pc))
+                    pc2["mode"] = "admin"
+                    us["parental_controls"] = pc2
+                    await self._settings_setSetting(SETTINGS_KEY_SETTINGS, us)
+                    await decky.emit("timeout_settings_updated", us)
+                    return {"ok": True, "controls": pc2}
         return {"ok": False}
 
     async def lock_parental(self) -> bool:
         async with SETTINGS_LOCK:
             us = await self._get_user_settings()
-            pc = json.loads(json.dumps(us.get("parental_controls", DEFAULT_SETTINGS["parental_controls"])))
+            current_pc = json.loads(json.dumps(us.get("parental_controls", DEFAULT_SETTINGS["parental_controls"])))
+            pc = json.loads(json.dumps(current_pc))
             pc["mode"] = "self"
+            # No-self-lockout: engaging the lock with no passcode would produce
+            # an unlockable block (verify can never succeed). Refuse instead;
+            # a block already in that legacy state is left as-is (no-op True).
+            if _is_passcode_lockout(pc) and not _is_passcode_lockout(current_pc):
+                decky.logger.warning("Timeout: lock_parental refused — no passcode set")
+                return False
             us["parental_controls"] = pc
             await self._settings_setSetting(SETTINGS_KEY_SETTINGS, us)
             await decky.emit("timeout_settings_updated", us)

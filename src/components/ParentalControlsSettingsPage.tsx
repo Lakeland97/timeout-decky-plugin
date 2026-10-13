@@ -33,14 +33,15 @@ export const ParentalControlsSettingsPage = () => {
     const STORED_HASH_RE = /^[0-9a-f]{64}$/;
     const savePasscode = async () => {
         if (savingPasscode) return;
-        const value = passcode;
+        const raw = passcode;
+        const value = raw.trim(); // whitespace-only == empty (backend trims too)
         if (!value) return;
         setSavingPasscode(true);
         try {
             const r = await update({ passcode: value });
             if (r && STORED_HASH_RE.test(String(r.passcode ?? ''))) {
                 // Clear only the text we just saved (keep any newer typing).
-                setPasscode(prev => (prev === value ? '' : prev));
+                setPasscode(prev => (prev === raw ? '' : prev));
             } else {
                 console.error('passcode save: backend did not confirm a stored hash', r);
                 toaster.toast({ title: 'Timeout', body: 'Passcode failed to save — see logs' });
@@ -51,6 +52,28 @@ export const ParentalControlsSettingsPage = () => {
     };
 
     const locked = controls.enabled && controls.mode === 'self';
+    // Stored passcode is a salted SHA-256 hash; a non-empty value (trimmed)
+    // means a credential exists. Enabling without one would be refused by the
+    // backend (no self-lockout), so the toggle is disabled up front instead of
+    // silently no-opping.
+    const hasPasscode = String(controls.passcode ?? '').trim() !== '';
+    const enableBlocked = !controls.enabled && !hasPasscode;
+
+    const toggleEnabled = async (v: boolean) => {
+        const r = await update({ enabled: v });
+        if (!r) {
+            console.error('enable toggle: backend refused', v);
+            toaster.toast({
+                title: 'Timeout',
+                body: v ? 'Enable refused — set a passcode first' : 'Parental controls update refused'
+            });
+        }
+    };
+
+    const lockNow = async () => {
+        if (await lock()) return;
+        toaster.toast({ title: 'Timeout', body: 'Lock refused — set a passcode first' });
+    };
 
     const toggleFeature = (key: ParentalLockedFeature, on: boolean) => {
         const next = new Set(controls.locked_features ?? []);
@@ -70,8 +93,10 @@ export const ParentalControlsSettingsPage = () => {
                     <ToggleField
                         icon={<FaShieldAlt size={16} />}
                         label="Enable parental controls"
+                        description={enableBlocked ? 'Set a passcode first' : undefined}
+                        disabled={enableBlocked}
                         checked={controls.enabled}
-                        onChange={(v) => update({ enabled: v })}
+                        onChange={toggleEnabled}
                     />
                 </PanelSectionRow>
                 <PanelSectionRow>
@@ -114,7 +139,7 @@ export const ParentalControlsSettingsPage = () => {
                             <FaLockOpen style={{ marginRight: 8 }} />Unlock (enter passcode)
                         </ButtonItem>
                     ) : (
-                        <ButtonItem layout="below" onClick={() => lock()}>
+                        <ButtonItem layout="below" onClick={lockNow}>
                             <FaLock style={{ marginRight: 8 }} />Lock now
                         </ButtonItem>
                     )}
